@@ -1,0 +1,26 @@
+----------FUTURE PLANS--------------------------
+suppose there is multiple restaurant registered named: Balcha Cafe, Nomad Cafe. if there is same username and password used in both cafe, then one can access the record of another cafe which will be breach to the data . so enable the restaurant filtering so that only the respective user from respective restaurant can login and access the data .
+Customer profiles
+Points, rewards, coupons
+Online Ordering & Delivery Integration
+Multi-location Management
+Central dashboard for chains
+Franchise-level reporting
+Suggest menu optimization (high-profit items)
+Auto staff scheduling
+
+menu with:
+Images + videos
+Allergen warnings
+AI recommendations (“People also order…”)
+Auto inventory deduction per order
+
+Local payment integrations (eSewa, Khalti)
+Multi-language (English + Nepali + Hindi)
+Offline-first + mobile-first
+
+while creating or adding table from admin side, the flow should be :
+first the section/floor should be mentioned for example : first, top, garden , ground floor.
+then in that floor\section, how many tables should be listed, the user has to input in number for example: the user inputs 3 
+then the capacity field should be mentioned and according to the section/floor, number input by the user for table and capacity , the table should automatically created through the initial of the first word .
+
