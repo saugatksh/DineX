@@ -693,11 +693,19 @@ function DailyReportView({ onAddExpense }) {
   const now = new Date();
   const [selectedDate, setSelectedDate] = useState(now.toISOString().split("T")[0]);
   const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // start true so spinner shows immediately
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const res = await API.get(`/admin/daily-report?date=${selectedDate}`); setReport(res.data); } catch {}
+    setLoadError(false);
+    try {
+      const res = await API.get(`/admin/daily-report?date=${selectedDate}`);
+      setReport(res.data);
+    } catch (err) {
+      setLoadError(true);
+      setReport(null);
+    }
     setLoading(false);
   }, [selectedDate]);
 
@@ -744,7 +752,14 @@ function DailyReportView({ onAddExpense }) {
 
       {loading && <div className="flex-center" style={{ padding: 60 }}><div className="spinner" /></div>}
 
-      {!loading && report && (
+      {!loading && loadError && (
+        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+          ⚠️ Failed to load report. Please check that the backend is running and try again.
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 12 }} onClick={load}>↻ Retry</button>
+        </div>
+      )}
+
+      {!loading && !loadError && report && (
         <>
           {/* KPI Summary */}
           <div className="pnl-summary" style={{ marginBottom: 20 }}>
@@ -799,8 +814,8 @@ function DailyReportView({ onAddExpense }) {
         </>
       )}
 
-      {!loading && !report && (
-        <div className="empty-state"><div className="empty-icon">📅</div><h3>Select a date to view the report</h3></div>
+      {!loading && !loadError && !report && (
+        <div className="empty-state"><div className="empty-icon">📅</div><h3>No data found for this date</h3><p style={{ color: "var(--text-muted)", fontSize: 13 }}>No paid orders or expenses were recorded on this day.</p></div>
       )}
     </>
   );
@@ -1398,22 +1413,7 @@ function OrdersTab() {
                       <td colSpan="9" style={{ padding: "0 16px 16px" }}>
                         <div style={{ padding: "12px 0", borderTop: "1px solid var(--border)" }}>
                           {itemsCache[o.id] ? (() => {
-                            const { items: rawItems, bill } = itemsCache[o.id];
-                            // Merge all items by name only — different special requests are combined
-                            const mergeItems = (arr) => {
-                              const map = new Map();
-                              arr.forEach(item => {
-                                const key = item.name || item.item;
-                                if (map.has(key)) {
-                                  const ex = map.get(key);
-                                  map.set(key, { ...ex, quantity: Number(ex.quantity) + Number(item.quantity), price: Number(ex.price) + Number(item.price) });
-                                } else {
-                                  map.set(key, { ...item, quantity: Number(item.quantity), price: Number(item.price) });
-                                }
-                              });
-                              return Array.from(map.values());
-                            };
-                            const items = mergeItems(rawItems);
+                            const { items, bill } = itemsCache[o.id];
                             return (
                               <>
                                 {items.length === 0 && <div style={{ color: "var(--text-muted)", fontSize: 13, padding: "4px 12px" }}>No items found.</div>}
@@ -1506,18 +1506,10 @@ function getAutoLabel(section, existingTablesInSection) {
 function TablesTab() {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ table_number: "", capacity: 4, table_label: "", table_section: "Main" });
   const [saving, setSaving] = useState(false);
   const [editModal, setEditModal] = useState(null);
-
-  // ── Bulk-create wizard state ──────────────────────────────────────────────
-  // step 1: enter section name
-  // step 2: enter table count + capacity
-  // step 3: preview & confirm
-  const [wizardStep, setWizardStep] = useState(1);
-  const [wizardSection, setWizardSection] = useState("");
-  const [wizardCount, setWizardCount] = useState("");
-  const [wizardCapacity, setWizardCapacity] = useState(4);
-  const [wizardPreview, setWizardPreview] = useState([]); // [{label, table_number, capacity}]
+  const [autoLabelPreview, setAutoLabelPreview] = useState("");
 
   const load = useCallback(async () => {
     try { const res = await API.get("/tables"); setTables(res.data); } catch {}
@@ -1526,68 +1518,25 @@ function TablesTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Build preview whenever step changes to 3
-  const buildPreview = (section, count, capacity) => {
-    const existing = tables.filter(t =>
+  // When section changes, auto-generate label preview
+  const handleSectionChange = (section) => {
+    const countInSection = tables.filter(t =>
       (t.table_section || "Main").toLowerCase() === (section || "Main").toLowerCase()
-    );
-    const existingCount = existing.length;
-    // Next available table_number across whole restaurant
-    const usedNums = tables.map(t => Number(t.table_number));
-    let nextNum = (usedNums.length ? Math.max(...usedNums) : 0) + 1;
-    const rows = [];
-    for (let i = 0; i < count; i++) {
-      const words = section.trim().split(/\s+/);
-      const initials = words.map(w => w[0].toUpperCase()).join("").slice(0, 3);
-      const label = section && section !== "Main" ? `${initials}${existingCount + i + 1}` : `#${nextNum}`;
-      rows.push({ label, table_number: nextNum, capacity: Number(capacity) });
-      nextNum++;
-    }
-    return rows;
+    ).length;
+    const autoLabel = getAutoLabel(section, countInSection);
+    setAutoLabelPreview(autoLabel);
+    setForm(f => ({ ...f, table_section: section, table_label: autoLabel }));
   };
 
-  const handleWizardStep1 = (e) => {
-    e.preventDefault();
-    if (!wizardSection.trim()) return;
-    setWizardStep(2);
-  };
-
-  const handleWizardStep2 = (e) => {
-    e.preventDefault();
-    const count = parseInt(wizardCount);
-    if (!count || count < 1 || count > 50) return;
-    const preview = buildPreview(wizardSection, count, wizardCapacity);
-    setWizardPreview(preview);
-    setWizardStep(3);
-  };
-
-  const handleWizardConfirm = async () => {
-    setSaving(true);
+  const handleAdd = async (e) => {
+    e.preventDefault(); setSaving(true);
     try {
-      for (const row of wizardPreview) {
-        await API.post("/tables", {
-          table_number: row.table_number,
-          capacity: row.capacity,
-          table_label: row.label,
-          table_section: wizardSection,
-        });
-      }
-      setWizardStep(1);
-      setWizardSection("");
-      setWizardCount("");
-      setWizardCapacity(4);
-      setWizardPreview([]);
+      await API.post("/tables", form);
+      setForm({ table_number: "", capacity: 4, table_label: "", table_section: form.table_section });
+      setAutoLabelPreview("");
       await load();
     } catch {}
     setSaving(false);
-  };
-
-  const handleWizardReset = () => {
-    setWizardStep(1);
-    setWizardSection("");
-    setWizardCount("");
-    setWizardCapacity(4);
-    setWizardPreview([]);
   };
 
   const handleEdit = async (e) => {
@@ -1612,158 +1561,58 @@ function TablesTab() {
 
   if (loading) return <div className="page-body flex-center"><div className="spinner" /></div>;
 
-  const existingSections = [...new Set(tables.map(t => t.table_section || "Main"))];
-
   return (
     <>
       <div className="page-header"><div><h1>Tables</h1><p>{tables.length} tables configured</p></div></div>
       <div className="page-body">
         <div className="card" style={{ marginBottom: 24 }}>
-          <div className="section-title">➕ Add Tables</div>
-
-          {/* ── STEP INDICATOR ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 24, userSelect: "none" }}>
-            {[
-              { n: 1, label: "Section / Floor" },
-              { n: 2, label: "Count & Capacity" },
-              { n: 3, label: "Confirm" },
-            ].map((s, idx) => (
-              <React.Fragment key={s.n}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                    fontWeight: 800, fontSize: 14,
-                    background: wizardStep === s.n ? "var(--accent)" : wizardStep > s.n ? "var(--success)" : "var(--bg-surface)",
-                    color: wizardStep >= s.n ? "#fff" : "var(--text-muted)",
-                    border: wizardStep < s.n ? "2px solid var(--border)" : "none",
-                    transition: "all 0.2s",
-                  }}>
-                    {wizardStep > s.n ? "✓" : s.n}
-                  </div>
-                  <div style={{ fontSize: 11, color: wizardStep === s.n ? "var(--accent)" : "var(--text-muted)", fontWeight: wizardStep === s.n ? 700 : 400, whiteSpace: "nowrap" }}>{s.label}</div>
-                </div>
-                {idx < 2 && (
-                  <div style={{ flex: 1, height: 2, background: wizardStep > s.n ? "var(--success)" : "var(--border)", margin: "0 8px", marginBottom: 20, transition: "background 0.3s" }} />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* ── STEP 1: Section/Floor ── */}
-          {wizardStep === 1 && (
-            <form onSubmit={handleWizardStep1}>
-              <div style={{ maxWidth: 420 }}>
-                <div className="form-group">
-                  <label style={{ fontWeight: 700 }}>Which section or floor are these tables for?</label>
-                  <input
-                    required
-                    list="section-suggestions"
-                    placeholder="e.g. Ground Floor, Garden, Rooftop, First Floor"
-                    value={wizardSection}
-                    autoFocus
-                    onChange={e => setWizardSection(e.target.value)}
-                    style={{ fontSize: 15 }}
-                  />
-                  <datalist id="section-suggestions">
-                    {existingSections.map(s => <option key={s} value={s} />)}
-                  </datalist>
-                  {wizardSection.trim() && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>
-                      Tables will be labelled using initials: <strong style={{ color: "var(--accent)" }}>
-                        {wizardSection.trim().split(/\s+/).map(w => w[0].toUpperCase()).join("").slice(0, 3)}1
-                      </strong>, <strong style={{ color: "var(--accent)" }}>
-                        {wizardSection.trim().split(/\s+/).map(w => w[0].toUpperCase()).join("").slice(0, 3)}2
-                      </strong>, …
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button type="submit" className="btn btn-primary" disabled={!wizardSection.trim()}>
-                    Next →
-                  </button>
-                </div>
+          <div className="section-title">➕ Add Table</div>
+          {(() => {
+            const sections = [...new Set(tables.map(t => t.table_section || "Main").filter(Boolean))];
+            if (!sections.includes("Main")) sections.unshift("Main");
+            return null;
+          })()}
+          <form onSubmit={handleAdd}>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div className="form-group" style={{ flex: "1 1 100px", minWidth: 90 }}>
+                <label>Table No.</label>
+                <input required type="number" min="1" placeholder="e.g. 7" value={form.table_number} onChange={e => setForm({ ...form, table_number: e.target.value })} />
               </div>
-            </form>
-          )}
-
-          {/* ── STEP 2: Count + Capacity ── */}
-          {wizardStep === 2 && (
-            <form onSubmit={handleWizardStep2}>
-              <div style={{ maxWidth: 420 }}>
-                <div style={{ marginBottom: 14, padding: "8px 12px", background: "var(--bg-surface)", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span>📍</span>
-                  <span>Section: <strong style={{ color: "var(--accent)" }}>{wizardSection}</strong></span>
-                  <button type="button" onClick={() => setWizardStep(1)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }}>Change</button>
-                </div>
-                <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  <div className="form-group" style={{ flex: "1 1 140px" }}>
-                    <label style={{ fontWeight: 700 }}>How many tables?</label>
-                    <input
-                      required
-                      type="number"
-                      min="1"
-                      max="50"
-                      placeholder="e.g. 3"
-                      value={wizardCount}
-                      autoFocus
-                      onChange={e => setWizardCount(e.target.value)}
-                      style={{ fontSize: 15 }}
-                    />
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Max 50 at once</div>
-                  </div>
-                  <div className="form-group" style={{ flex: "1 1 140px" }}>
-                    <label style={{ fontWeight: 700 }}>Seating capacity per table</label>
-                    <input
-                      required
-                      type="number"
-                      min="1"
-                      placeholder="e.g. 4"
-                      value={wizardCapacity}
-                      onChange={e => setWizardCapacity(e.target.value)}
-                      style={{ fontSize: 15 }}
-                    />
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Seats per table</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  <button type="button" className="btn btn-ghost" onClick={() => setWizardStep(1)}>← Back</button>
-                  <button type="submit" className="btn btn-primary" disabled={!wizardCount || parseInt(wizardCount) < 1}>
-                    Preview →
-                  </button>
-                </div>
+              <div className="form-group" style={{ flex: "1 1 80px", minWidth: 80 }}>
+                <label>Capacity</label>
+                <input type="number" min="1" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} />
               </div>
-            </form>
-          )}
-
-          {/* ── STEP 3: Preview & Confirm ── */}
-          {wizardStep === 3 && (
-            <div style={{ maxWidth: 560 }}>
-              <div style={{ marginBottom: 14, padding: "8px 12px", background: "var(--bg-surface)", borderRadius: 8, border: "1px solid var(--border)", fontSize: 13, display: "flex", gap: 16 }}>
-                <span>📍 <strong style={{ color: "var(--accent)" }}>{wizardSection}</strong></span>
-                <span>🪑 {wizardPreview.length} tables</span>
-                <span>👥 {wizardCapacity} seats each</span>
+              <div className="form-group" style={{ flex: "1 1 140px", minWidth: 130 }}>
+                <label>Section / Floor</label>
+                <input
+                  list="section-suggestions"
+                  placeholder="e.g. Garden, Rooftop, Ground Floor"
+                  value={form.table_section}
+                  onChange={e => handleSectionChange(e.target.value)}
+                />
+                <datalist id="section-suggestions">
+                  {[...new Set(tables.map(t => t.table_section || "Main"))].map(s => <option key={s} value={s} />)}
+                </datalist>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px,1fr))", gap: 8, marginBottom: 16 }}>
-                {wizardPreview.map((row, i) => (
-                  <div key={i} style={{ background: "var(--bg-surface)", border: "2px solid var(--accent)", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: "var(--accent)" }}>{row.label}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>No. {row.table_number}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>👥 {row.capacity}</div>
-                  </div>
-                ))}
+              <div className="form-group" style={{ flex: "1 1 130px", minWidth: 120 }}>
+                <label>
+                  Table Label
+                  {autoLabelPreview && <span style={{ color: "var(--accent)", fontSize: 11, marginLeft: 6, fontWeight: 400 }}>auto: {autoLabelPreview}</span>}
+                </label>
+                <input
+                  placeholder="e.g. G1, R3, FF2"
+                  value={form.table_label}
+                  onChange={e => setForm({ ...form, table_label: e.target.value })}
+                />
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12, padding: "6px 10px", background: "var(--bg-surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
-                💡 Labels auto-generated from section initials. You can rename any table after creation using the ✏️ edit button.
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" className="btn btn-ghost" onClick={() => setWizardStep(2)}>← Back</button>
-                <button type="button" className="btn btn-ghost" onClick={handleWizardReset}>✕ Cancel</button>
-                <button type="button" className="btn btn-primary" onClick={handleWizardConfirm} disabled={saving}>
-                  {saving ? <><span className="spinner-sm" /> Creating...</> : `✅ Create ${wizardPreview.length} Table${wizardPreview.length > 1 ? "s" : ""}`}
-                </button>
-              </div>
+              <button type="submit" className="btn btn-primary" disabled={saving} style={{ marginBottom: 1 }}>{saving ? <span className="spinner-sm" /> : "Add Table"}</button>
             </div>
-          )}
+            {autoLabelPreview && form.table_section && form.table_section !== "Main" && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)", padding: "6px 10px", background: "var(--bg-surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                💡 Auto-label <strong style={{ color: "var(--accent)" }}>{autoLabelPreview}</strong> generated from section "{form.table_section}" — edit above if needed
+              </div>
+            )}
+          </form>
         </div>
 
         {/* Group tables by section */}

@@ -24,3 +24,6 @@ first the section/floor should be mentioned for example : first, top, garden , g
 then in that floor\section, how many tables should be listed, the user has to input in number for example: the user inputs 3 
 then the capacity field should be mentioned and according to the section/floor, number input by the user for table and capacity , the table should automatically created through the initial of the first word .
 
+when the kitchen/bar staff clicks preparing and ready to serve, then both kitchen order and bar order must be individually seen to the waiter panel. 
+
+in admin side>all orders, in order summary , the repeated items must be seen as for example : if Mutton Daal Bhat is ordered twice from different rounds or 1 daal bhat is on table and another daal bhat is takeaway then the order summar must be seen as Mutton Daal Bhat*2 . rather than mutton daal bhat*1 , mutton daal bhat*1.

@@ -351,7 +351,7 @@ export default function WaiterPanel() {
         const di = rounds.findIndex(r => r.order.status === "draft");
         setDraftRoundIdx(di === -1 ? null : di);
       } catch {}
-    }, 10000);
+    }, 4000);
     return () => clearInterval(interval);
   }, [view, selectedTable]);
 
@@ -663,23 +663,44 @@ export default function WaiterPanel() {
                     </div>
                 }
                 {allRounds.map((r, idx) =>
-                  r.order.status !== "draft" && (
-                    <span key={idx} className="badge" style={{
-                      background: r.order.status === "ready" ? "rgba(139,92,246,0.15)"
-                        : r.order.status === "preparing" ? "var(--info-bg)"
-                        : `${ROUND_COLORS[idx%6]}18`,
-                      color: r.order.status === "ready" ? "#8b5cf6"
-                        : r.order.status === "preparing" ? "var(--info)"
-                        : ROUND_COLORS[idx%6],
-                      border: r.order.status === "ready" ? "1px solid rgba(139,92,246,0.35)"
-                        : r.order.status === "preparing" ? "1px solid var(--info-border, rgba(56,189,248,0.3))"
-                        : `1px solid ${ROUND_COLORS[idx%6]}35`
-                    }}>
-                      {r.order.status === "ready" ? `✅ ${getRoundLabel(idx)} Ready!`
-                       : r.order.status === "preparing" ? `🔥 ${getRoundLabel(idx)} Preparing`
-                       : `✓ ${getRoundLabel(idx)} sent`}
-                    </span>
-                  )
+                  r.order.status !== "draft" && (() => {
+                    const BAR_CATS_W = ["drink","drinks","beverage","beverages","bar","cocktail","mocktail","juice","beer","wine","alcohol"];
+                    const isBar = i => BAR_CATS_W.includes((i.category||"").toLowerCase());
+                    const kItems = r.items.filter(i => !isBar(i));
+                    const bItems = r.items.filter(i => isBar(i));
+                    const stSt = (items) => {
+                      if (!items.length) return null;
+                      const st = items.map(i => i.kitchen_status || "pending");
+                      if (st.every(s => s === "ready")) return "ready";
+                      if (st.some(s => s === "preparing" || s === "ready")) return "preparing";
+                      return "pending";
+                    };
+                    const ks = stSt(kItems), bs = stSt(bItems);
+                    // Overall badge — if both stations, show separate pills
+                    if (ks !== null && bs !== null) {
+                      const kColor = ks === "ready" ? "#8b5cf6" : ks === "preparing" ? "rgba(56,189,248,1)" : ROUND_COLORS[idx%6];
+                      const bColor = bs === "ready" ? "#8b5cf6" : bs === "preparing" ? "rgba(56,189,248,1)" : ROUND_COLORS[idx%6];
+                      return (
+                        <span key={idx} style={{ display:"contents" }}>
+                          <span className="badge" style={{ background:`${kColor}18`, color:kColor, border:`1px solid ${kColor}55` }}>
+                            {ks === "ready" ? `✅ ${getRoundLabel(idx)} Kitchen Ready` : ks === "preparing" ? `🔥 ${getRoundLabel(idx)} Kitchen` : `⏳ ${getRoundLabel(idx)} Kitchen`}
+                          </span>
+                          <span className="badge" style={{ background:`${bColor}18`, color:bColor, border:`1px solid ${bColor}55` }}>
+                            {bs === "ready" ? `✅ Bar Ready` : bs === "preparing" ? `🔥 Bar` : `⏳ Bar`}
+                          </span>
+                        </span>
+                      );
+                    }
+                    // Single station
+                    const s = ks ?? bs; const label = ks !== null ? "Kitchen" : "Bar";
+                    const bg = s === "ready" ? "rgba(139,92,246,0.15)" : s === "preparing" ? "var(--info-bg)" : `${ROUND_COLORS[idx%6]}18`;
+                    const fg = s === "ready" ? "#8b5cf6" : s === "preparing" ? "var(--info)" : ROUND_COLORS[idx%6];
+                    return (
+                      <span key={idx} className="badge" style={{ background:bg, color:fg, border:`1px solid ${fg}35` }}>
+                        {s === "ready" ? `✅ ${getRoundLabel(idx)} ${label} Ready!` : s === "preparing" ? `🔥 ${getRoundLabel(idx)} ${label}` : `✓ ${getRoundLabel(idx)} sent`}
+                      </span>
+                    );
+                  })()
                 )}
                 {draftRoundIdx !== null && <span className="badge badge-warning">✏️ {getRoundOrdinal(draftRoundIdx)} order</span>}
               </div>
@@ -881,17 +902,43 @@ export default function WaiterPanel() {
                             {round.order.order_type === "takeaway" ? "📦 Takeaway" : getRoundLabel(idx)}
                             {isDraft&&<span style={{ fontWeight:500, textTransform:"none", marginLeft:6, fontSize:10 }}>— adding…</span>}
                           </span>
-                          {isSent ? (
-                            <span style={{ fontSize:11, fontWeight:700, color:
-                              round.order.status === "ready" ? "#8b5cf6"
-                              : round.order.status === "preparing" ? "var(--info)"
-                              : "var(--success)"
-                            }}>
-                              {round.order.status === "ready" ? "✅ Ready to Serve"
-                               : round.order.status === "preparing" ? "🔥 Preparing"
-                               : "✓ Sent"}
-                            </span>
-                          ) : <span style={{ fontSize:11, color, fontWeight:600 }}>Draft</span>}
+                          {isSent ? (() => {
+                            // Compute per-station status from item-level kitchen_status
+                            const BAR_CATS_W = ["drink","drinks","beverage","beverages","bar","cocktail","mocktail","juice","beer","wine","alcohol"];
+                            const isBar = i => BAR_CATS_W.includes((i.category||"").toLowerCase());
+                            const kitchenItems = round.items.filter(i => !isBar(i));
+                            const barItems     = round.items.filter(i => isBar(i));
+                            const stationStatus = (items) => {
+                              if (!items.length) return null;
+                              const statuses = items.map(i => i.kitchen_status || "pending");
+                              if (statuses.every(s => s === "ready")) return "ready";
+                              if (statuses.some(s => s === "preparing" || s === "ready")) return "preparing";
+                              return "pending";
+                            };
+                            const ks = stationStatus(kitchenItems);
+                            const bs = stationStatus(barItems);
+                            const statusLabel = (s, icon, label) => {
+                              if (s === null) return null;
+                              const color = s === "ready" ? "#8b5cf6" : s === "preparing" ? "var(--info)" : "var(--text-muted)";
+                              const text  = s === "ready" ? `✅ ${label} Ready` : s === "preparing" ? `🔥 ${label} Preparing` : `⏳ ${label} Queued`;
+                              return <span key={label} style={{ fontSize:10, fontWeight:700, color, background: s === "ready" ? "rgba(139,92,246,0.1)" : s === "preparing" ? "rgba(56,189,248,0.1)" : "var(--bg-surface)", border:`1px solid ${color}55`, borderRadius:6, padding:"2px 7px", whiteSpace:"nowrap" }}>{text}</span>;
+                            };
+                            const hasKitchenAndBar = ks !== null && bs !== null;
+                            return (
+                              <span style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"flex-end" }}>
+                                {hasKitchenAndBar ? (
+                                  <>
+                                    {statusLabel(ks, "🍳", "Kitchen")}
+                                    {statusLabel(bs, "🍹", "Bar")}
+                                  </>
+                                ) : (
+                                  statusLabel(ks ?? bs, null, ks !== null ? "Kitchen" : "Bar") || (
+                                    <span style={{ fontSize:11, fontWeight:700, color:"var(--success)" }}>✓ Sent</span>
+                                  )
+                                )}
+                              </span>
+                            );
+                          })() : <span style={{ fontSize:11, color, fontWeight:600 }}>Draft</span>}
                         </div>
                         <div>
                           {round.items.length === 0

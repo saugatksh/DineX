@@ -137,12 +137,13 @@ router.get("/:id", authMiddleware, async (req, res) => {
       [req.params.id]
     );
     const items = await pool.query(
-      `SELECT m.name, m.category,
+      `SELECT m.name, m.category, m.subcategory,
               m.id AS menu_id,
               oi.id AS id,
               oi.quantity AS quantity,
               oi.price AS price,
-              oi.special_request
+              oi.special_request,
+              COALESCE(oi.kitchen_status, 'pending') AS kitchen_status
        FROM order_items oi
        JOIN menu m ON oi.menu_id = m.id
        WHERE oi.order_id=$1
