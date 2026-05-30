@@ -324,20 +324,20 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 -- SEED DATA  (skipped if restaurant already exists)
 -- ============================================================
--- INSERT INTO restaurants (
---   name, address, phone, pan_number,
---   subscription_start, subscription_end,
---   tax_enabled, tax_rate
--- ) VALUES (
---   'The Grand Kitchen',
---   '123 Main Street, Kathmandu',
---   '+977-1-4567890',
---   '123456789',
---   CURRENT_DATE,
---   CURRENT_DATE + INTERVAL '1 year',
---   true,
---   13.00
--- ) ON CONFLICT DO NOTHING;
+INSERT INTO restaurants (
+  name, address, phone, pan_number,
+  subscription_start, subscription_end,
+  tax_enabled, tax_rate
+) VALUES (
+  'The Grand Kitchen',
+  '123 Main Street, Kathmandu',
+  '+977-1-4567890',
+  '123456789',
+  CURRENT_DATE,
+  CURRENT_DATE + INTERVAL '1 year',
+  true,
+  13.00
+) ON CONFLICT DO NOTHING;
 
 -- ============================================================
 -- NOTES
@@ -354,3 +354,8 @@ $$ LANGUAGE plpgsql;
 -- v5: per-item kitchen status so food and bar can be prepared independently
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS kitchen_status VARCHAR(20) DEFAULT 'pending'
   CHECK (kitchen_status IN ('pending','preparing','ready'));
+
+-- Fix table_id FK to allow table deletion even when orders exist
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_table_id_fkey;
+ALTER TABLE orders ADD CONSTRAINT orders_table_id_fkey
+  FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL;
