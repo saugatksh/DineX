@@ -392,16 +392,15 @@ router.get("/:id/bill", authMiddleware, async (req, res) => {
       }
     }
 
-    // Fetch items for all rounds — group by name+special_request so special requests stay distinct
+    // Fetch items — group by name only so same items always merge on bill
     const itemsResult = await pool.query(
       `SELECT m.name,
-              COALESCE(oi.special_request, '') as special_request,
               SUM(oi.quantity) AS quantity,
               SUM(oi.price) AS price
        FROM order_items oi
        JOIN menu m ON oi.menu_id=m.id
        WHERE oi.order_id = ANY($1::int[])
-       GROUP BY m.name, oi.special_request
+       GROUP BY m.name
        ORDER BY m.name ASC`,
       [allOrderIds]
     );
