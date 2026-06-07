@@ -15,6 +15,7 @@ const TABS = [
   { id: "tables",      label: "Tables",            icon: "🪑", section: "manage" },
   { id: "menu",        label: "Menu",              icon: "🍔", section: "manage" },
   { id: "inventory",   label: "Inventory",         icon: "📦", section: "manage" },
+  { id: "stocklog",    label: "Daily Stock Log",   icon: "📈", section: "manage" },
   { id: "users",       label: "Staff",             icon: "👥", section: "manage" },
   { id: "specials",    label: "Daily Specials",    icon: "⭐", section: "manage" },
   { id: "credits",     label: "Credit Payments",   icon: "💳", section: "finance" },
@@ -103,7 +104,13 @@ export default function AdminDashboard() {
             <img src="/dinex-favicon-1.png" alt="DineX" style={{ width: 44, height: 44, objectFit: "contain" }} />
             <h2>DineX</h2>
           </div>
-          <div className="restaurant-name">{user?.restaurant_name}</div>
+          {user?.restaurant_logo && (
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8, marginBottom:4 }}>
+              <img src={user.restaurant_logo} alt="Restaurant logo" style={{ width:36, height:36, borderRadius:10, objectFit:"cover", border:"2px solid var(--border)" }} />
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)" }}>{user?.restaurant_name}</div>
+            </div>
+          )}
+          {!user?.restaurant_logo && <div className="restaurant-name">{user?.restaurant_name}</div>}
           <div className="brand-role">Admin Panel</div>
         </div>
         <nav>
@@ -163,6 +170,7 @@ export default function AdminDashboard() {
         {tab === "tables"         && <TablesTab />}
         {tab === "menu"           && <MenuTab />}
         {tab === "inventory"      && <InventoryTab />}
+        {tab === "stocklog"       && <DailyStockLogTab />}
         {tab === "users"          && <UsersTab />}
         {tab === "specials"       && <DailySpecialsTab />}
         {tab === "credits"        && <CreditsTab />}
@@ -181,7 +189,7 @@ export default function AdminDashboard() {
 // NOTIFICATIONS TAB (standalone panel — not credits)
 // ─────────────────────────────────────────────────────────────────────────────
 function NotificationsTab({ notifs, onMarkRead, onMarkAll, onRefresh }) {
-  const typeIcon = { credit_due: "💳", subscription_ending: "📅", subscription_expired: "🚫", system: "🔧" };
+  const typeIcon = { credit_due: "💳", subscription_ending: "📅", subscription_expired: "🚫", system: "🔧", credit_overdue: "🔴", reservation_noshow: "🚫" };
   const unread = notifs.filter(n => !n.is_read).length;
 
   return (
@@ -1603,6 +1611,7 @@ function TablesTab() {
       if (editModal.status === "reserved") {
         payload.reserved_by_name = editModal.reserved_by_name || "";
         payload.reserved_by_phone = editModal.reserved_by_phone || "";
+        payload.reservation_time = editModal.reservation_time || null;
       }
       await API.put(`/tables/${editModal.id}`, payload);
       setEditModal(null); await load();
@@ -1793,6 +1802,7 @@ function TablesTab() {
                         <div style={{ fontSize: 10, marginTop: 4, color: "var(--accent)", fontWeight: 600 }}>
                           📋 {t.reserved_by_name}
                           {t.reserved_by_phone && <div>📞 {t.reserved_by_phone}</div>}
+                          {t.reservation_time && <div>🕐 {new Date(t.reservation_time).toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
                         </div>
                       )}
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>👥 {t.capacity} seats</div>
@@ -1868,6 +1878,10 @@ function TablesTab() {
                     <div className="form-group">
                       <label>Contact Number *</label>
                       <input type="tel" placeholder="98XXXXXXXX" maxLength={10} value={editModal.reserved_by_phone || ""} onChange={e => setEditModal({ ...editModal, reserved_by_phone: e.target.value.replace(/\D/g, "").slice(0, 10) })} />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                      <label>Reservation Time</label>
+                      <input type="datetime-local" value={editModal.reservation_time ? editModal.reservation_time.slice(0,16) : ""} onChange={e => setEditModal({ ...editModal, reservation_time: e.target.value || null })} />
                     </div>
                   </div>
                 )}
@@ -2289,6 +2303,301 @@ function InventoryTab() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAILY STOCK LOG — opening/closing stock tracking with daily comparison
+// ─────────────────────────────────────────────────────────────────────────────
+function DailyStockLogTab() {
+  const [inventory, setInventory] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [comparison, setComparison] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState({});
+  const [editValues, setEditValues] = useState({});
+  const [activeView, setActiveView] = useState("entry"); // "entry" | "comparison"
+  const [historyDates, setHistoryDates] = useState([]);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const [invRes, logsRes, compRes, datesRes] = await Promise.all([
+        API.get("/inventory"),
+        API.get(`/stock-log?date=${selectedDate}`),
+        API.get(`/stock-log/comparison?date=${selectedDate}`),
+        API.get("/stock-log/dates"),
+      ]);
+      setInventory(invRes.data);
+      setLogs(logsRes.data);
+      setComparison(compRes.data);
+      setHistoryDates(datesRes.data);
+
+      // Pre-populate editValues from existing logs
+      const vals = {};
+      logsRes.data.forEach(log => {
+        vals[log.inventory_id] = {
+          opening_stock: log.opening_stock ?? "",
+          closing_stock: log.closing_stock ?? "",
+          notes: log.notes || "",
+          log_id: log.id,
+        };
+      });
+      setEditValues(vals);
+    } catch {}
+    setLoading(false);
+  }, [selectedDate]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const getLogForItem = (invId) => logs.find(l => l.inventory_id === invId);
+
+  const handleSave = async (item) => {
+    const vals = editValues[item.id] || {};
+    const opening = vals.opening_stock !== "" ? Number(vals.opening_stock) : null;
+    const closing = vals.closing_stock !== "" ? Number(vals.closing_stock) : null;
+    setSaving(s => ({ ...s, [item.id]: true }));
+    try {
+      await API.post("/stock-log", {
+        inventory_id: item.id,
+        item_name: item.item_name,
+        unit: item.unit,
+        log_date: selectedDate,
+        opening_stock: opening,
+        closing_stock: closing,
+        notes: vals.notes || null,
+      });
+      await load();
+    } catch {}
+    setSaving(s => ({ ...s, [item.id]: false }));
+  };
+
+  const updateVal = (invId, field, value) => {
+    setEditValues(prev => ({
+      ...prev,
+      [invId]: { ...(prev[invId] || {}), [field]: value },
+    }));
+  };
+
+  const isToday = selectedDate === new Date().toISOString().split("T")[0];
+  const totalLogged = logs.filter(l => l.opening_stock !== null || l.closing_stock !== null).length;
+
+  if (loading) return <div className="page-body flex-center"><div className="spinner" /></div>;
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <h1>Daily Stock Log</h1>
+          <p>{totalLogged} of {inventory.length} items logged for {isToday ? "today" : selectedDate}</p>
+        </div>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          <input
+            type="date"
+            value={selectedDate}
+            max={new Date().toISOString().split("T")[0]}
+            onChange={e => setSelectedDate(e.target.value)}
+            style={{ borderRadius:8, border:"1px solid var(--border)", padding:"6px 10px", background:"var(--bg-surface)", color:"var(--text-primary)", fontSize:13 }}
+          />
+        </div>
+      </div>
+
+      {/* View toggle */}
+      <div style={{ display:"flex", gap:4, margin:"0 24px 16px", background:"var(--bg-surface)", borderRadius:10, padding:4, width:"fit-content", border:"1px solid var(--border)" }}>
+        {[["entry","📝 Stock Entry"],["comparison","📊 Daily Comparison"]].map(([v,label]) => (
+          <button key={v} onClick={() => setActiveView(v)} style={{
+            padding:"6px 16px", borderRadius:8, border:"none", cursor:"pointer", fontWeight:600, fontSize:13,
+            background: activeView===v ? "var(--accent)" : "transparent",
+            color: activeView===v ? "#fff" : "var(--text-muted)",
+            transition:"all 0.2s",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div className="page-body">
+
+        {/* ── STOCK ENTRY VIEW ── */}
+        {activeView === "entry" && (
+          <>
+            <div className="alert" style={{ marginBottom:16, background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.2)", borderRadius:10, padding:"10px 14px", fontSize:13, color:"var(--text-primary)" }}>
+              💡 Enter <strong>Opening Stock</strong> at the start of the day and <strong>Closing Stock</strong> at the end. Consumption is calculated automatically.
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Unit</th>
+                    <th>Current Qty</th>
+                    <th>Opening Stock</th>
+                    <th>Closing Stock</th>
+                    <th>Consumption</th>
+                    <th>Notes</th>
+                    <th>Save</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventory.map(item => {
+                    const log = getLogForItem(item.id);
+                    const ev = editValues[item.id] || {};
+                    const openVal = ev.opening_stock !== undefined ? ev.opening_stock : (log?.opening_stock ?? "");
+                    const closeVal = ev.closing_stock !== undefined ? ev.closing_stock : (log?.closing_stock ?? "");
+                    const consumption = openVal !== "" && closeVal !== ""
+                      ? (Number(openVal) - Number(closeVal)).toFixed(2)
+                      : log?.consumption ?? null;
+                    const isSaved = log?.opening_stock !== null || log?.closing_stock !== null;
+                    return (
+                      <tr key={item.id} style={{ background: isSaved ? "rgba(34,197,94,0.04)" : undefined }}>
+                        <td style={{ fontWeight:600 }}>
+                          {item.item_name}
+                          {isSaved && <span style={{ marginLeft:6, fontSize:10, color:"var(--success)", fontWeight:700 }}>✓ logged</span>}
+                        </td>
+                        <td style={{ color:"var(--text-muted)" }}>{item.unit}</td>
+                        <td style={{ fontWeight:600, color: item.quantity <= item.min_stock ? "var(--danger)" : "var(--text-primary)" }}>
+                          {item.quantity}
+                        </td>
+                        <td>
+                          <input
+                            type="number" step="0.01" min="0"
+                            placeholder="e.g. 50"
+                            value={openVal}
+                            onChange={e => updateVal(item.id, "opening_stock", e.target.value)}
+                            style={{ width:90, padding:"5px 8px", borderRadius:7, border:"1px solid var(--border)", background:"var(--bg-surface)", color:"var(--text-primary)", fontSize:13 }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number" step="0.01" min="0"
+                            placeholder="e.g. 30"
+                            value={closeVal}
+                            onChange={e => updateVal(item.id, "closing_stock", e.target.value)}
+                            style={{ width:90, padding:"5px 8px", borderRadius:7, border:"1px solid var(--border)", background:"var(--bg-surface)", color:"var(--text-primary)", fontSize:13 }}
+                          />
+                        </td>
+                        <td style={{ fontWeight:700, color: consumption > 0 ? "var(--danger)" : consumption < 0 ? "var(--info, #38bdf8)" : "var(--text-muted)" }}>
+                          {consumption !== null ? `${consumption} ${item.unit}` : "—"}
+                          {consumption < 0 && <div style={{ fontSize:10, color:"var(--info,#38bdf8)", fontWeight:400 }}>Stock added</div>}
+                        </td>
+                        <td>
+                          <input
+                            placeholder="optional"
+                            value={ev.notes || ""}
+                            onChange={e => updateVal(item.id, "notes", e.target.value)}
+                            style={{ width:110, padding:"5px 8px", borderRadius:7, border:"1px solid var(--border)", background:"var(--bg-surface)", color:"var(--text-primary)", fontSize:12 }}
+                          />
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={saving[item.id]}
+                            onClick={() => handleSave(item)}
+                          >
+                            {saving[item.id] ? <span className="spinner-sm" /> : "Save"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {inventory.length === 0 && (
+                    <tr><td colSpan="8"><div className="empty-state" style={{ padding:40 }}><div className="empty-icon">📦</div><h3>No inventory items</h3><p>Add inventory items first to start tracking stock.</p></div></td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* ── DAILY COMPARISON VIEW ── */}
+        {activeView === "comparison" && (
+          <>
+            <div className="alert" style={{ marginBottom:16, background:"rgba(99,102,241,0.08)", border:"1px solid rgba(99,102,241,0.2)", borderRadius:10, padding:"10px 14px", fontSize:13, color:"var(--text-primary)" }}>
+              📊 Comparing <strong>{selectedDate}</strong> vs previous day. <span style={{ color:"var(--danger)" }}>↑ Red</span> = more consumed than yesterday, <span style={{ color:"var(--success)" }}>↓ Green</span> = less consumed.
+            </div>
+            {comparison.length === 0 ? (
+              <div className="empty-state" style={{ padding:60 }}>
+                <div className="empty-icon">📊</div>
+                <h3>No stock entries for this date</h3>
+                <p>Switch to "Stock Entry" tab to log opening and closing stock first.</p>
+                <button className="btn btn-primary" onClick={() => setActiveView("entry")}>Go to Stock Entry</button>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Unit</th>
+                      <th>Today Opening</th>
+                      <th>Today Closing</th>
+                      <th>Today Used</th>
+                      <th>Yesterday Used</th>
+                      <th>Difference</th>
+                      <th>Trend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparison.map((row, idx) => {
+                      const diff = row.consumption_diff;
+                      const diffAbs = diff !== null ? Math.abs(diff).toFixed(2) : null;
+                      const isMore = diff > 0.01;
+                      const isLess = diff < -0.01;
+                      return (
+                        <tr key={idx}>
+                          <td style={{ fontWeight:600 }}>{row.item_name}</td>
+                          <td style={{ color:"var(--text-muted)" }}>{row.unit}</td>
+                          <td>{row.today_opening ?? <span style={{ color:"var(--text-muted)" }}>—</span>}</td>
+                          <td>{row.today_closing ?? <span style={{ color:"var(--text-muted)" }}>—</span>}</td>
+                          <td style={{ fontWeight:700 }}>
+                            {row.today_consumption !== null ? `${Number(row.today_consumption).toFixed(2)} ${row.unit}` : <span style={{ color:"var(--text-muted)" }}>—</span>}
+                          </td>
+                          <td style={{ color:"var(--text-muted)" }}>
+                            {row.prev_consumption !== null ? `${Number(row.prev_consumption).toFixed(2)} ${row.unit}` : <span>—</span>}
+                          </td>
+                          <td style={{ fontWeight:700, color: isMore ? "var(--danger)" : isLess ? "var(--success)" : "var(--text-muted)" }}>
+                            {diffAbs !== null ? `${isMore ? "+" : isLess ? "-" : ""}${diffAbs} ${row.unit}` : "—"}
+                          </td>
+                          <td>
+                            {diff === null ? <span style={{ color:"var(--text-muted)", fontSize:12 }}>No prev data</span>
+                              : isMore ? <span style={{ color:"var(--danger)", fontWeight:700, fontSize:13 }}>🔺 More used</span>
+                              : isLess ? <span style={{ color:"var(--success)", fontWeight:700, fontSize:13 }}>🔻 Less used</span>
+                              : <span style={{ color:"var(--text-muted)", fontSize:12 }}>➡ Same</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* History summary */}
+            {historyDates.length > 0 && (
+              <div style={{ marginTop:24 }}>
+                <div style={{ fontWeight:700, fontSize:14, color:"var(--text-primary)", marginBottom:10 }}>📅 Recent Log History</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {historyDates.map(d => (
+                    <button
+                      key={d.log_date}
+                      onClick={() => setSelectedDate(d.log_date.split("T")[0])}
+                      style={{
+                        padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+                        background: selectedDate === d.log_date.split("T")[0] ? "var(--accent)" : "var(--bg-surface)",
+                        color: selectedDate === d.log_date.split("T")[0] ? "#fff" : "var(--text-primary)",
+                        border:"1px solid var(--border)",
+                      }}
+                    >
+                      {new Date(d.log_date).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+                      <span style={{ marginLeft:4, opacity:0.7 }}>({d.with_closing}/{d.item_count})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </>
   );
 }

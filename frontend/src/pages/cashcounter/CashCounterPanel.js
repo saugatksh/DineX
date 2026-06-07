@@ -176,7 +176,7 @@ export default function CashCounterPanel() {
   const [creditModal, setCreditModal]     = useState(false);
   const [creditForm, setCreditForm]       = useState({ customer_name: "", customer_phone: "", deadline: "", notes: "" });
   const [reserveModal, setReserveModal]   = useState(null);
-  const [reserveForm, setReserveForm]     = useState({ reserved_by_name: "", reserved_by_phone: "" });
+  const [reserveForm, setReserveForm]     = useState({ reserved_by_name: "", reserved_by_phone: "", reservation_time: "" });
   const [reserving, setReserving]         = useState(false);
   const [takeawayModal, setTakeawayModal] = useState(false);
   const [menu, setMenu]                   = useState([]);
@@ -190,6 +190,7 @@ export default function CashCounterPanel() {
   const [discountType,  setDiscountType]  = useState("percent");
   const [discountValue, setDiscountValue] = useState("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [noShowNotifs, setNoShowNotifs]       = useState([]);
 
   const { user, logout, theme, toggleTheme } = useAuth();
   const navigate = useNavigate();
@@ -240,6 +241,23 @@ export default function CashCounterPanel() {
 
   useEffect(() => { loadOrders(); loadMenu(); }, [loadOrders, loadMenu]);
   useEffect(() => { const t = setInterval(loadOrders, 15000); return () => clearInterval(t); }, [loadOrders]);
+
+  // Poll reservation no-show notifications every 60 s
+  const loadNoShowNotifs = useCallback(async () => {
+    try {
+      const r = await API.get("/notifications/reservation-noshow");
+      setNoShowNotifs(r.data.filter(n => !n.is_read));
+    } catch {}
+  }, []);
+  useEffect(() => { loadNoShowNotifs(); }, [loadNoShowNotifs]);
+  useEffect(() => {
+    const t = setInterval(loadNoShowNotifs, 60000);
+    return () => clearInterval(t);
+  }, [loadNoShowNotifs]);
+  const dismissNoShow = async (id) => {
+    try { await API.put(`/notifications/reservation-noshow/${id}/read`); } catch {}
+    setNoShowNotifs(prev => prev.filter(n => n.id !== id));
+  };
 
   const selectOrder = async (order) => {
     setSelectedOrder(order);
@@ -319,9 +337,12 @@ export default function CashCounterPanel() {
     if (!reserveModal) return;
     setReserving(true);
     try {
-      await API.post(`/tables/${reserveModal.id}/reserve`, reserveForm);
+      await API.post(`/tables/${reserveModal.id}/reserve`, {
+        ...reserveForm,
+        reservation_time: reserveForm.reservation_time || null,
+      });
       setReserveModal(null);
-      setReserveForm({ reserved_by_name: "", reserved_by_phone: "" });
+      setReserveForm({ reserved_by_name: "", reserved_by_phone: "", reservation_time: "" });
       await loadOrders();
     } catch (err) { alert(err.response?.data?.error || "Failed to reserve"); }
     setReserving(false);
@@ -576,6 +597,26 @@ msg += "🌟 We hope to serve you again soon.";
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", flexDirection: "column" }}>
+      {/* Reservation No-Show Alerts */}
+      {noShowNotifs.length > 0 && (
+        <div style={{ position: "sticky", top: 0, zIndex: 200 }}>
+          {noShowNotifs.map(n => (
+            <div key={n.id} style={{
+              display: "flex", alignItems: "flex-start", gap: 10,
+              background: "#7c3aed", color: "#fff",
+              padding: "10px 16px", fontSize: 13, fontWeight: 600,
+              borderBottom: "1px solid rgba(255,255,255,0.15)"
+            }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>🚫</span>
+              <span style={{ flex: 1 }}>{n.title} — {n.message}</span>
+              <button onClick={() => dismissNoShow(n.id)} style={{
+                background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
+                borderRadius: 6, padding: "2px 10px", cursor: "pointer", fontWeight: 700, fontSize: 13, flexShrink: 0
+              }}>✕ Dismiss</button>
+            </div>
+          ))}
+        </div>
+      )}
       {/* Logout Confirmation Modal */}
       {showLogoutModal && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999 }}>
@@ -594,7 +635,11 @@ msg += "🌟 We hope to serve you again soon.";
       {/* ── HEADER ── */}
       <header className="cc-header no-print">
         <div className="cc-header-left">
-          <div style={{ width: 40, height: 40, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, boxShadow: "0 0 16px rgba(99,102,241,0.4)", flexShrink: 0 }}>💰</div>
+          <div style={{ width: 40, height: 40, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, boxShadow: "0 0 16px rgba(99,102,241,0.4)", flexShrink: 0, overflow: "hidden" }}>
+            {user?.restaurant_logo
+              ? <img src={user.restaurant_logo} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              : "💰"}
+          </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 15, color: "#f1f5f9" }}>Cash Counter</div>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{user?.restaurant_name} · {user?.name}</div>
@@ -701,6 +746,7 @@ msg += "🌟 We hope to serve you again soon.";
                   <div style={{ fontSize: 10, marginTop: 2, color: "var(--accent-light)", fontWeight: 600 }}>
                     📋 {t.reserved_by_name}
                     {t.reserved_by_phone && <div style={{ opacity: 0.8 }}>📞 {t.reserved_by_phone}</div>}
+                    {t.reservation_time && <div style={{ opacity:0.85, color:"#fbbf24" }}>🕐 {new Date(t.reservation_time).toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</div>}
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>👥 {t.capacity}</div>
@@ -709,7 +755,7 @@ msg += "🌟 We hope to serve you again soon.";
                     <button onClick={() => updateTableStatus(t.id, "available")} style={{ flex: 1, minWidth: 44, background: "var(--success-bg)", border: "1px solid var(--success)", color: "var(--success)", borderRadius: 6, padding: "2px 4px", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>Free</button>
                   )}
                   {t.status !== "reserved" && (
-                    <button onClick={() => { setReserveModal(t); setReserveForm({ reserved_by_name: "", reserved_by_phone: "" }); }} style={{ flex: 1, minWidth: 44, background: "var(--accent-bg,#eef2ff)", border: "1px solid var(--accent)", color: "var(--accent)", borderRadius: 6, padding: "2px 4px", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>Reserve</button>
+                    <button onClick={() => { setReserveModal(t); setReserveForm({ reserved_by_name: "", reserved_by_phone: "", reservation_time: "" }); }} style={{ flex: 1, minWidth: 44, background: "var(--accent-bg,#eef2ff)", border: "1px solid var(--accent)", color: "var(--accent)", borderRadius: 6, padding: "2px 4px", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>Reserve</button>
                   )}
                 </div>
               </div>
@@ -1082,6 +1128,7 @@ msg += "🌟 We hope to serve you again soon.";
               <div className="modal-body">
                 <div className="form-group"><label>Reserved By (Name) *</label><input required placeholder="Customer name" value={reserveForm.reserved_by_name} onChange={e => setReserveForm({ ...reserveForm, reserved_by_name: e.target.value })} /></div>
                 <div className="form-group"><label>Contact Number *</label><input required placeholder="Phone number" value={reserveForm.reserved_by_phone} onChange={e => setReserveForm({ ...reserveForm, reserved_by_phone: e.target.value })} /></div>
+                <div className="form-group"><label>Reservation Time</label><input type="datetime-local" value={reserveForm.reservation_time || ""} onChange={e => setReserveForm({ ...reserveForm, reservation_time: e.target.value || "" })} /></div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setReserveModal(null)}>Cancel</button>

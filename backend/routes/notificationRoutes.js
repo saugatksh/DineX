@@ -36,6 +36,32 @@ router.get("/", authMiddleware, requireRole("admin"), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Get reservation no-show notifications for cash counter
+// (cash counter can only see reservation_noshow type — not credit/billing data)
+router.get("/reservation-noshow", authMiddleware, requireRole("cashcounter", "admin"), async (req, res) => {
+  const rid = req.user.restaurant_id;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM notifications
+       WHERE restaurant_id=$1 AND type='reservation_noshow'
+       ORDER BY is_read ASC, created_at DESC LIMIT 20`,
+      [rid]
+    );
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Mark a reservation no-show notification read (cash counter or admin)
+router.put("/reservation-noshow/:id/read", authMiddleware, requireRole("cashcounter", "admin"), async (req, res) => {
+  try {
+    await pool.query(
+      "UPDATE notifications SET is_read=true WHERE id=$1 AND restaurant_id=$2 AND type='reservation_noshow'",
+      [req.params.id, req.user.restaurant_id]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.put("/:id/read", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
     await pool.query("UPDATE notifications SET is_read=true WHERE id=$1 AND restaurant_id=$2",

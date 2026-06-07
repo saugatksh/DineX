@@ -549,7 +549,11 @@ export default function WaiterPanel() {
           {view === "order" && (
             <button className="btn btn-ghost btn-sm" onClick={goBack} style={{ padding:"6px 10px", flexShrink:0, borderRadius:10 }}>← Back</button>
           )}
-          <div style={{ width:36, height:36, borderRadius:12, background:"var(--gradient-brand)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0, boxShadow:"0 2px 8px rgba(245,158,11,0.35)" }}>🧑‍🍽️</div>
+          <div style={{ width:36, height:36, borderRadius:12, overflow:"hidden", background:"var(--gradient-brand)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0, boxShadow:"0 2px 8px rgba(245,158,11,0.35)" }}>
+            {user?.restaurant_logo
+              ? <img src={user.restaurant_logo} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              : "🧑‍🍽️"}
+          </div>
           <div style={{ minWidth:0 }}>
             <div style={{ fontWeight:800, fontSize:15, letterSpacing:"-0.02em", whiteSpace:"nowrap", background:"var(--gradient-brand)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>Waiter Panel</div>
             <div style={{ fontSize:11, color:"var(--text-muted)", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
@@ -626,7 +630,7 @@ export default function WaiterPanel() {
                             <div style={{ fontSize:10, color:"var(--info)", fontWeight:700, marginTop:2 }}>📍 {t.table_section}</div>
                           )}
                           <div className={`tile-status tile-s-${t.status}`} style={{ marginTop:7 }}>{t.status}</div>
-                          {t.status === "reserved" && t.reserved_by_name && <div style={{ fontSize:11, color:"#8b5cf6", marginTop:5, fontWeight:700 }}>📋 {t.reserved_by_name}</div>}
+                          {t.status === "reserved" && t.reserved_by_name && <div style={{ fontSize:11, color:"#8b5cf6", marginTop:5, fontWeight:700 }}>📋 {t.reserved_by_name}{t.reservation_time && <span style={{fontWeight:400,marginLeft:4}}>· 🕐{new Date(t.reservation_time).toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>}</div>}
                           <div className="tile-cap" style={{ marginTop:5 }}>👥 {t.capacity}</div>
                         </div>
                       ))}

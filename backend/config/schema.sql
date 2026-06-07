@@ -359,3 +359,30 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS kitchen_status VARCHAR(20) DEFA
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_table_id_fkey;
 ALTER TABLE orders ADD CONSTRAINT orders_table_id_fkey
   FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL;
+-- ============================================================
+-- v6: RESERVATION TIME + DAILY STOCK LOG
+-- ============================================================
+
+-- Add reservation_time to tables
+ALTER TABLE tables ADD COLUMN IF NOT EXISTS reservation_time TIMESTAMP;
+
+-- Daily stock log table for opening/closing stock tracking
+CREATE TABLE IF NOT EXISTS daily_stock_log (
+  id              SERIAL PRIMARY KEY,
+  restaurant_id   INT           REFERENCES restaurants(id) ON DELETE CASCADE,
+  inventory_id    INT           REFERENCES inventory(id) ON DELETE CASCADE,
+  item_name       VARCHAR(100)  NOT NULL,
+  unit            VARCHAR(30)   DEFAULT 'pcs',
+  log_date        DATE          NOT NULL DEFAULT CURRENT_DATE,
+  opening_stock   DECIMAL(10,2),
+  closing_stock   DECIMAL(10,2),
+  consumption     DECIMAL(10,2) GENERATED ALWAYS AS (
+                    CASE WHEN opening_stock IS NOT NULL AND closing_stock IS NOT NULL
+                    THEN opening_stock - closing_stock ELSE NULL END
+                  ) STORED,
+  notes           TEXT,
+  logged_by       INT           REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMP     DEFAULT NOW(),
+  updated_at      TIMESTAMP     DEFAULT NOW(),
+  UNIQUE(restaurant_id, inventory_id, log_date)
+);

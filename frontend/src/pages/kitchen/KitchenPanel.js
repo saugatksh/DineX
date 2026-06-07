@@ -230,8 +230,12 @@ export default function KitchenPanel() {
             background: isBar ? "linear-gradient(135deg,#38bdf8,#0284c7)" : "linear-gradient(135deg,#f59e0b,#d97706)",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 18, boxShadow: isBar ? "0 2px 12px rgba(56,189,248,.4)" : "0 2px 12px rgba(245,158,11,.4)",
-            flexShrink: 0, transition: "all .3s",
-          }}>{isBar ? "🍹" : "👨‍🍳"}</div>
+            flexShrink: 0, transition: "all .3s", overflow: "hidden",
+          }}>
+            {user?.restaurant_logo
+              ? <img src={user.restaurant_logo} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              : (isBar ? "🍹" : "👨‍🍳")}
+          </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 14, color: "var(--txt)" }}>
               {user?.restaurant_name}
@@ -337,12 +341,15 @@ function KCard({ order, station, updating, stationStatus, onStartAll, onReadyAll
   const [elapsed, setElapsed] = useState(timeSince(order.created_at));
   const isBar     = station === "bar";
   const isTakeaway = order.order_type === "takeaway";
-  const isUrgent  = (Date.now() - new Date(order.created_at)) > 15 * 60 * 1000;
+  const ageMs     = Date.now() - new Date(order.created_at);
+  const isWarning = ageMs > 10 * 60 * 1000 && ageMs <= 15 * 60 * 1000;
+  const isUrgent  = ageMs > 15 * 60 * 1000;
   const allPending = stationStatus === "pending";
   const allReady   = order.items.every(i => (i.kitchen_status || "pending") === "ready");
 
   useEffect(() => {
-    const t = setInterval(() => setElapsed(timeSince(order.created_at)), 15000);
+    // Re-render every 30 s so warning/urgent badges appear promptly
+    const t = setInterval(() => setElapsed(timeSince(order.created_at)), 30000);
     return () => clearInterval(t);
   }, [order.created_at]);
 
@@ -359,7 +366,9 @@ function KCard({ order, station, updating, stationStatus, onStartAll, onReadyAll
 
   return (
     <div className={`kp-card ${stationStatus}`} style={{
-      borderColor: isUrgent && stationStatus === "pending" ? "rgba(244,63,94,.5)" : undefined,
+      borderColor: isUrgent && stationStatus === "pending" ? "rgba(244,63,94,.5)"
+               : isWarning && stationStatus === "pending" ? "rgba(245,158,11,.7)"
+               : undefined,
     }}>
       {/* Banner */}
       <div className="kp-banner" style={{ background: bannerBg }}>
@@ -379,6 +388,9 @@ function KCard({ order, station, updating, stationStatus, onStartAll, onReadyAll
             Order #{order.id}
             {isUrgent && stationStatus === "pending" && (
               <span className="pulse kp-urgent" style={{ marginLeft: 6 }}>⚠️ URGENT</span>
+            )}
+            {isWarning && stationStatus === "pending" && (
+              <span className="pulse kp-urgent" style={{ marginLeft: 6, color: "var(--warn)", background: "rgba(245,158,11,.12)" }}>⏰ LATE</span>
             )}
           </div>
           {order.waiter_name && (

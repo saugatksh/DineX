@@ -26,9 +26,9 @@ router.post("/", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// EDIT TABLE (number, capacity, status, reservation, label, section)
+// EDIT TABLE (number, capacity, status, reservation, label, section, reservation_time)
 router.put("/:id", authMiddleware, async (req, res) => {
-  const { table_number, capacity, status, reserved_by_name, reserved_by_phone, table_label, table_section } = req.body;
+  const { table_number, capacity, status, reserved_by_name, reserved_by_phone, table_label, table_section, reservation_time } = req.body;
   const validStatuses = ["available", "occupied", "reserved"];
   if (status && !validStatuses.includes(status)) {
     return res.status(400).json({ error: "Invalid status" });
@@ -42,12 +42,14 @@ router.put("/:id", authMiddleware, async (req, res) => {
          table_label   = $6,
          table_section = COALESCE($7, table_section),
          reserved_by_name  = CASE WHEN $3='reserved' THEN $4 WHEN $3 IS NOT NULL AND $3!='reserved' THEN NULL ELSE COALESCE($4, reserved_by_name) END,
-         reserved_by_phone = CASE WHEN $3='reserved' THEN $5 WHEN $3 IS NOT NULL AND $3!='reserved' THEN NULL ELSE COALESCE($5, reserved_by_phone) END
-       WHERE id=$8 AND restaurant_id=$9 RETURNING *`,
+         reserved_by_phone = CASE WHEN $3='reserved' THEN $5 WHEN $3 IS NOT NULL AND $3!='reserved' THEN NULL ELSE COALESCE($5, reserved_by_phone) END,
+         reservation_time  = CASE WHEN $3='reserved' THEN $8 WHEN $3 IS NOT NULL AND $3!='reserved' THEN NULL ELSE reservation_time END
+       WHERE id=$9 AND restaurant_id=$10 RETURNING *`,
       [table_number||null, capacity||null, status||null,
        reserved_by_name||null, reserved_by_phone||null,
        table_label||null,
        table_section||null,
+       reservation_time||null,
        req.params.id, req.user.restaurant_id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Table not found" });
@@ -57,15 +59,15 @@ router.put("/:id", authMiddleware, async (req, res) => {
 
 // RESERVE TABLE (admin sets reservation)
 router.post("/:id/reserve", authMiddleware, requireRole("admin", "cashcounter"), async (req, res) => {
-  const { reserved_by_name, reserved_by_phone } = req.body;
+  const { reserved_by_name, reserved_by_phone, reservation_time } = req.body;
   if (!reserved_by_name || !reserved_by_phone) {
     return res.status(400).json({ error: "Name and phone are required for reservation" });
   }
   try {
     const result = await pool.query(
-      `UPDATE tables SET status='reserved', reserved_by_name=$1, reserved_by_phone=$2
-       WHERE id=$3 AND restaurant_id=$4 RETURNING *`,
-      [reserved_by_name, reserved_by_phone, req.params.id, req.user.restaurant_id]
+      `UPDATE tables SET status='reserved', reserved_by_name=$1, reserved_by_phone=$2, reservation_time=$3
+       WHERE id=$4 AND restaurant_id=$5 RETURNING *`,
+      [reserved_by_name, reserved_by_phone, reservation_time || null, req.params.id, req.user.restaurant_id]
     );
     if (!result.rows.length) return res.status(404).json({ error: "Table not found" });
     res.json(result.rows[0]);

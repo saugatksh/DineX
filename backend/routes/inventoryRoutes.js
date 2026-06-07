@@ -42,4 +42,28 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Sync inventory quantities from closing stock of a given date
+// Updates every inventory item whose closing_stock was logged on that date
+router.post("/sync-from-closing", authMiddleware, async (req, res) => {
+  const rid = req.user.restaurant_id;
+  const { date } = req.body;
+  const logDate = date || new Date().toISOString().split("T")[0];
+  try {
+    const result = await pool.query(
+      `UPDATE inventory i
+       SET quantity   = sl.closing_stock,
+           updated_at = NOW()
+       FROM daily_stock_log sl
+       WHERE sl.inventory_id    = i.id
+         AND sl.restaurant_id   = $1
+         AND i.restaurant_id    = $1
+         AND sl.log_date        = $2
+         AND sl.closing_stock  IS NOT NULL
+       RETURNING i.id, i.item_name, i.quantity, sl.closing_stock`,
+      [rid, logDate]
+    );
+    res.json({ updated: result.rowCount, items: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;
