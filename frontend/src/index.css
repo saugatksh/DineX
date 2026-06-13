@@ -46,7 +46,7 @@ input,select,textarea,button{font-family:inherit;font-size:14px}
 
 /* ── DASHBOARD LAYOUT ── */
 .dashboard{display:flex;min-height:100vh;background:var(--bg-base)}
-.sidebar{width:var(--sidebar-w);min-height:100vh;background:var(--gradient-sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;overflow-y:auto;flex-shrink:0}
+.sidebar{min-height:100vh;background:var(--gradient-sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;overflow-y:auto;flex-shrink:0}
 .sidebar-brand{padding:22px 18px 18px;border-bottom:1px solid var(--border)}
 .brand-logo{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .brand-logo h2{font-size:16px;font-weight:800;background:var(--gradient-brand);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-0.3px}

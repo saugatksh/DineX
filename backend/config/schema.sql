@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE TABLE IF NOT EXISTS order_items (
   id              SERIAL PRIMARY KEY,
   order_id        INT           REFERENCES orders(id) ON DELETE CASCADE,
-  menu_id         INT           REFERENCES menu(id),
+  menu_id         INT           REFERENCES menu(id) ON DELETE SET NULL,
 
   quantity        INT           NOT NULL DEFAULT 1,
   price           DECIMAL(10,2) NOT NULL,

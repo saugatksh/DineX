@@ -3,8 +3,44 @@ const router = express.Router();
 const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const { authMiddleware, requireRole } = require("../middleware/authMiddleware");
+const { getFeaturesForPlan, PLAN_FEATURES } = require("../config/subscriptionPlans");
 
 const superOnly = [authMiddleware, requireRole("superadmin")];
+
+// ─── PLAN INFO ────────────────────────────────────────────────────────────────
+
+/** Returns available plans + their feature lists (public — used by frontend) */
+router.get("/plans", ...superOnly, (req, res) => {
+  res.json({
+    plans: [
+      {
+        id: "starter",
+        label: "Starter",
+        subtitle: "Small cafes & solo outlets",
+        badge: "Basic",
+        color: "#6b7280",
+        features: getFeaturesForPlan("starter"),
+      },
+      {
+        id: "business",
+        label: "Business",
+        subtitle: "Growing restaurants",
+        badge: "Standard",
+        color: "#6366f1",
+        popular: true,
+        features: getFeaturesForPlan("business"),
+      },
+      {
+        id: "pro",
+        label: "Pro",
+        subtitle: "Full-scale restaurants & chains",
+        badge: "Premium",
+        color: "#8b5cf6",
+        features: getFeaturesForPlan("pro"),
+      },
+    ],
+  });
+});
 
 // ─── RESTAURANTS ─────────────────────────────────────────────────────────────
 
@@ -25,11 +61,13 @@ router.get("/restaurants", ...superOnly, async (req, res) => {
 
 router.post("/restaurants", ...superOnly, async (req, res) => {
   try {
-    const { name, address, phone, pan_number, subscription_start, subscription_end, logo } = req.body;
+    const { name, address, phone, pan_number, subscription_start, subscription_end, logo, subscription_plan } = req.body;
+    const validPlans = ["starter", "business", "pro"];
+    const plan = validPlans.includes(subscription_plan) ? subscription_plan : "starter";
     const result = await pool.query(
-      `INSERT INTO restaurants (name, address, phone, pan_number, subscription_start, subscription_end, logo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [name, address, phone, pan_number || null, subscription_start, subscription_end, logo || null]
+      `INSERT INTO restaurants (name, address, phone, pan_number, subscription_start, subscription_end, logo, subscription_plan)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [name, address, phone, pan_number || null, subscription_start, subscription_end, logo || null, plan]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -39,12 +77,14 @@ router.post("/restaurants", ...superOnly, async (req, res) => {
 
 router.put("/restaurants/:id", ...superOnly, async (req, res) => {
   try {
-    const { name, address, phone, pan_number, subscription_start, subscription_end, is_active, logo } = req.body;
+    const { name, address, phone, pan_number, subscription_start, subscription_end, is_active, logo, subscription_plan } = req.body;
+    const validPlans = ["starter", "business", "pro"];
+    const plan = validPlans.includes(subscription_plan) ? subscription_plan : "starter";
     const result = await pool.query(
       `UPDATE restaurants SET name=$1, address=$2, phone=$3, pan_number=$4,
-       subscription_start=$5, subscription_end=$6, is_active=$7, logo=$8
-       WHERE id=$9 RETURNING *`,
-      [name, address, phone, pan_number ?? null, subscription_start, subscription_end, is_active, logo ?? null, req.params.id]
+       subscription_start=$5, subscription_end=$6, is_active=$7, logo=$8, subscription_plan=$9
+       WHERE id=$10 RETURNING *`,
+      [name, address, phone, pan_number ?? null, subscription_start, subscription_end, is_active, logo ?? null, plan, req.params.id]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -135,10 +175,22 @@ router.post("/sync-subscription-status", ...superOnly, async (req, res) => {
 
 router.delete("/restaurants/:id", ...superOnly, async (req, res) => {
   try {
+    const check = await pool.query("SELECT id, name FROM restaurants WHERE id=$1", [req.params.id]);
+    if (!check.rows.length) return res.status(404).json({ error: "Restaurant not found." });
+    // Fix: order_items.menu_id has no ON DELETE rule, so we null it out before
+    // deleting the restaurant (which cascades to menu, which would otherwise
+    // violate the order_items_menu_id_fkey constraint).
+    await pool.query(`
+      UPDATE order_items oi
+      SET menu_id = NULL
+      FROM orders o
+      WHERE oi.order_id = o.id AND o.restaurant_id = $1
+    `, [req.params.id]);
     await pool.query("DELETE FROM restaurants WHERE id=$1", [req.params.id]);
     res.json({ message: "Restaurant deleted" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("[DineX] Delete restaurant error:", err.message);
+    res.status(500).json({ error: "Delete failed: " + err.message });
   }
 });
 
@@ -208,4 +260,3 @@ router.get("/stats", ...superOnly, async (req, res) => {
 });
 
 module.exports = router;
-

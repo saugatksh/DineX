@@ -51,6 +51,25 @@ export function AuthProvider({ children }) {
 
   const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");
 
+  /**
+   * hasFeature(feature) — returns true if the current user's restaurant plan
+   * includes the given feature key.
+   * Superadmin always returns true (unrestricted access).
+   */
+  const hasFeature = useCallback((feature) => {
+    if (!user) return false;
+    if (user.role === "superadmin") return true;
+    if (!user.features || !Array.isArray(user.features)) return false;
+    return user.features.includes(feature);
+  }, [user]);
+
+  /**
+   * planLabel — human-readable plan name for display.
+   */
+  const planLabel = user?.subscription_plan
+    ? { starter: "Starter", business: "Business", pro: "Pro" }[user.subscription_plan] || user.subscription_plan
+    : null;
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -61,6 +80,8 @@ export function AuthProvider({ children }) {
       toggleTheme,
       subscriptionInactive,
       setSubscriptionInactive,
+      hasFeature,
+      planLabel,
     }}>
       {children}
     </AuthContext.Provider>

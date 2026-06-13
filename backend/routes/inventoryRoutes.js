@@ -2,8 +2,11 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 const { authMiddleware } = require("../middleware/authMiddleware");
+const { requireFeature } = require("../config/subscriptionPlans");
 
-router.get("/", authMiddleware, async (req, res) => {
+const requireInventory = requireFeature("inventory_management");
+
+router.get("/", authMiddleware, requireInventory, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const result = await pool.query("SELECT * FROM inventory WHERE restaurant_id=$1 ORDER BY item_name", [rid]);
@@ -11,7 +14,7 @@ router.get("/", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, requireInventory, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const { item_name, quantity, unit, min_stock, cost_per_unit } = req.body;
@@ -23,7 +26,7 @@ router.post("/", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.put("/:id", authMiddleware, async (req, res) => {
+router.put("/:id", authMiddleware, requireInventory, async (req, res) => {
   try {
     const { item_name, quantity, unit, min_stock, cost_per_unit } = req.body;
     const result = await pool.query(
@@ -34,7 +37,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete("/:id", authMiddleware, async (req, res) => {
+router.delete("/:id", authMiddleware, requireInventory, async (req, res) => {
   try {
     await pool.query("DELETE FROM inventory WHERE id=$1 AND restaurant_id=$2",
       [req.params.id, req.user.restaurant_id]);
@@ -44,7 +47,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 
 // Sync inventory quantities from closing stock of a given date
 // Updates every inventory item whose closing_stock was logged on that date
-router.post("/sync-from-closing", authMiddleware, async (req, res) => {
+router.post("/sync-from-closing", authMiddleware, requireInventory, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { date } = req.body;
   const logDate = date || new Date().toISOString().split("T")[0];

@@ -274,6 +274,19 @@ function Hl({ text = "", q = "" }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════════════════════════════════════════════════ */
+/* ── Live clock for waiter panel ── */
+function WaiterClock() {
+  const [t, setT] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
+  return <span style={{ fontWeight:700, color:"var(--accent)", fontVariantNumeric:"tabular-nums" }}>🕐 {t.toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit" })}</span>;
+}
+
+function getWaiterGreeting(name) {
+  const h = new Date().getHours();
+  const part = h < 12 ? "Good Morning" : h < 17 ? "Good Afternoon" : "Good Evening";
+  return `${part}, ${name || "Waiter"}! 👋`;
+}
+
 export default function WaiterPanel() {
   const [tables,           setTables]           = useState([]);
   const [menu,             setMenu]             = useState([]);
@@ -296,7 +309,7 @@ export default function WaiterPanel() {
   const [activeSubcat,   setActiveSubcat]   = useState("All");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-  const { user, logout } = useAuth();
+  const { user, logout, hasFeature } = useAuth();
   const navigate   = useNavigate();
   const summaryRef = useRef(null);
   const styleRef   = useRef(null);
@@ -317,19 +330,27 @@ export default function WaiterPanel() {
 
   const loadData = useCallback(async () => {
     try {
-      const [t, m, s, tax] = await Promise.all([
+      const [t, m] = await Promise.all([
         API.get("/tables"), API.get("/menu"),
-        API.get("/extras/specials"), API.get("/extras/tax-settings"),
       ]);
       setTables(t.data);
       setMenu(m.data.filter(i => i.is_available));
+    } catch {}
+
+    try {
+      const s = await API.get("/extras/specials");
       const sMap = {};
       s.data.forEach(sp => {
         sMap[sp.menu_id] = { ...sp, discounted_price: sp.discount_pct > 0 ? Math.round(sp.price * (1 - sp.discount_pct / 100)) : sp.price };
       });
       setSpecials(sMap);
+    } catch { setSpecials({}); }
+
+    try {
+      const tax = await API.get("/extras/tax-settings");
       setTaxSettings(tax.data);
     } catch {}
+
     setLoading(false);
   }, []);
   useEffect(() => { loadData(); }, [loadData]);
@@ -540,12 +561,12 @@ export default function WaiterPanel() {
       <header style={{
         background:"linear-gradient(135deg,var(--sidebar-bg) 0%,var(--bg-surface) 100%)",
         borderBottom:"1px solid var(--border)",
-        padding:"0 16px", height:62, display:"flex", alignItems:"center",
+        padding:"0 12px", minHeight:62, display:"flex", alignItems:"center",
         justifyContent:"space-between", position:"sticky", top:0, zIndex:200,
         boxShadow:"0 2px 16px rgba(0,0,0,0.15)",
-        backdropFilter:"blur(12px)",
+        backdropFilter:"blur(12px)", flexWrap:"wrap", gap:4,
       }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0, flex:"1 1 auto" }}>
           {view === "order" && (
             <button className="btn btn-ghost btn-sm" onClick={goBack} style={{ padding:"6px 10px", flexShrink:0, borderRadius:10 }}>← Back</button>
           )}
@@ -561,7 +582,14 @@ export default function WaiterPanel() {
             </div>
           </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+          {/* DateTime pill – hides date text on mobile, shows only clock */}
+          <div className="waiter-datetime-pill">
+            <span>📅</span>
+            <span className="waiter-date-text">{new Date().toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" })}</span>
+            <span className="waiter-date-sep">·</span>
+            <WaiterClock />
+          </div>
           <button className="theme-btn" onClick={() => setLocalTheme(t => t==="dark"?"light":"dark")}>
             <span style={{ fontSize:14 }}>{localTheme==="dark"?"🌙":"☀️"}</span>
             <div className="tog-track"><div className="tog-thumb" style={{ left:localTheme==="dark"?"16px":"2px" }} /></div>
@@ -575,6 +603,14 @@ export default function WaiterPanel() {
         {/* ═══ TABLES VIEW ═════════════════════════════════════════════ */}
         {view === "tables" && (
           <div style={{ maxWidth:1200, margin:"0 auto", animation:"fadeIn 0.3s ease" }}>
+            {/* Greeting banner */}
+            <div style={{ background:"var(--bg-card)", border:"1px solid var(--border)", borderRadius:14, padding:"14px 18px", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+              <div>
+                <div style={{ fontWeight:700, fontSize:15, color:"var(--text-primary)" }}>{getWaiterGreeting(user?.name)}</div>
+                <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>Select a table to start taking orders</div>
+              </div>
+              <div style={{ fontSize:12, color:"var(--text-secondary)" }}>{new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}</div>
+            </div>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:10 }}>
               <div>
                 <h1 style={{ fontSize:"clamp(20px,4vw,26px)", fontWeight:900, letterSpacing:"-0.03em", background:"var(--gradient-brand)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>Floor Plan</h1>
@@ -630,7 +666,7 @@ export default function WaiterPanel() {
                             <div style={{ fontSize:10, color:"var(--info)", fontWeight:700, marginTop:2 }}>📍 {t.table_section}</div>
                           )}
                           <div className={`tile-status tile-s-${t.status}`} style={{ marginTop:7 }}>{t.status}</div>
-                          {t.status === "reserved" && t.reserved_by_name && <div style={{ fontSize:11, color:"#8b5cf6", marginTop:5, fontWeight:700 }}>📋 {t.reserved_by_name}{t.reservation_time && <span style={{fontWeight:400,marginLeft:4}}>· 🕐{new Date(t.reservation_time).toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>}</div>}
+                          {t.status === "reserved" && t.reserved_by_name && hasFeature("table_reservations") && <div style={{ fontSize:11, color:"#8b5cf6", marginTop:5, fontWeight:700 }}>📋 {t.reserved_by_name}{t.reservation_time && <span style={{fontWeight:400,marginLeft:4}}>· 🕐{new Date(t.reservation_time).toLocaleString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>}</div>}
                           <div className="tile-cap" style={{ marginTop:5 }}>👥 {t.capacity}</div>
                         </div>
                       ))}
@@ -680,8 +716,9 @@ export default function WaiterPanel() {
                       return "pending";
                     };
                     const ks = stSt(kItems), bs = stSt(bItems);
-                    // Overall badge — if both stations, show separate pills
-                    if (ks !== null && bs !== null) {
+                    const hasBarKitchenRouting = user?.features?.includes("bar_kitchen_routing");
+                    // Overall badge — if both stations AND feature enabled, show separate pills
+                    if (hasBarKitchenRouting && ks !== null && bs !== null) {
                       const kColor = ks === "ready" ? "#8b5cf6" : ks === "preparing" ? "rgba(56,189,248,1)" : ROUND_COLORS[idx%6];
                       const bColor = bs === "ready" ? "#8b5cf6" : bs === "preparing" ? "rgba(56,189,248,1)" : ROUND_COLORS[idx%6];
                       return (
@@ -695,7 +732,7 @@ export default function WaiterPanel() {
                         </span>
                       );
                     }
-                    // Single station
+                    // Single station (or routing not available on plan)
                     const s = ks ?? bs; const label = ks !== null ? "Kitchen" : "Bar";
                     const bg = s === "ready" ? "rgba(139,92,246,0.15)" : s === "preparing" ? "var(--info-bg)" : `${ROUND_COLORS[idx%6]}18`;
                     const fg = s === "ready" ? "#8b5cf6" : s === "preparing" ? "var(--info)" : ROUND_COLORS[idx%6];
@@ -927,7 +964,7 @@ export default function WaiterPanel() {
                               const text  = s === "ready" ? `✅ ${label} Ready` : s === "preparing" ? `🔥 ${label} Preparing` : `⏳ ${label} Queued`;
                               return <span key={label} style={{ fontSize:10, fontWeight:700, color, background: s === "ready" ? "rgba(139,92,246,0.1)" : s === "preparing" ? "rgba(56,189,248,0.1)" : "var(--bg-surface)", border:`1px solid ${color}55`, borderRadius:6, padding:"2px 7px", whiteSpace:"nowrap" }}>{text}</span>;
                             };
-                            const hasKitchenAndBar = ks !== null && bs !== null;
+                            const hasKitchenAndBar = user?.features?.includes("bar_kitchen_routing") && ks !== null && bs !== null;
                             return (
                               <span style={{ display:"flex", flexWrap:"wrap", gap:4, justifyContent:"flex-end" }}>
                                 {hasKitchenAndBar ? (
@@ -953,6 +990,7 @@ export default function WaiterPanel() {
                                 item={item}
                                 isDraft={isDraft}
                                 color={color}
+                                hasSpecialRequests={user?.features?.includes("special_requests")}
                                 onRemove={() => removeItem(item.id)}
                                 onUpdateRequest={async (req) => {
                                   try {
@@ -1094,6 +1132,13 @@ export default function WaiterPanel() {
           </div>
         </div>
       )}
+      {/* DineX branding footer */}
+      <div style={{ textAlign:"center", padding:"10px 0 12px",
+           fontSize:11, color:"var(--text-muted,#94a3b8)", borderTop:"1px solid var(--border,rgba(148,163,184,0.15))", marginTop:8 }}>
+        Developed &amp; Powered by 
+        <a href="https://www.saugatbohara.com.np/Dinex.html" target="_blank" rel="noopener noreferrer"
+           style={{ color:"#818cf8", textDecoration:"none", fontWeight:700 }}>DineX</a>
+      </div>
     </div>
   );
 }
@@ -1102,7 +1147,7 @@ export default function WaiterPanel() {
 /* ═══════════════════════════════════════════════════════════════════════════
    ORDER ITEM ROW — inline special request editing in order summary
 ═══════════════════════════════════════════════════════════════════════════ */
-function OrderItemRow({ item, isDraft, color, onRemove, onUpdateRequest }) {
+function OrderItemRow({ item, isDraft, color, hasSpecialRequests, onRemove, onUpdateRequest }) {
   const [editing, setEditing]   = useState(false);
   const [reqText, setReqText]   = useState(item.special_request || "");
   const [saving, setSaving]     = useState(false);
@@ -1133,7 +1178,7 @@ function OrderItemRow({ item, isDraft, color, onRemove, onUpdateRequest }) {
         </span>
         {isDraft && (
           <>
-            <button
+            {hasSpecialRequests && <button
               title="Add special request"
               onClick={() => setEditing(e => !e)}
               style={{
@@ -1144,7 +1189,7 @@ function OrderItemRow({ item, isDraft, color, onRemove, onUpdateRequest }) {
                 fontSize: 14, padding: "3px 7px", borderRadius: 6, lineHeight: 1,
                 fontFamily: "var(--font)", fontWeight: 700,
               }}
-            >⚠️</button>
+            >⚠️</button>}
             <button
               onClick={onRemove}
               style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 18, padding: "0 2px", lineHeight: 1 }}
@@ -1154,7 +1199,7 @@ function OrderItemRow({ item, isDraft, color, onRemove, onUpdateRequest }) {
       </div>
 
       {/* existing special request badge (non-edit mode) */}
-      {!editing && item.special_request && (
+      {hasSpecialRequests && !editing && item.special_request && (
         <div style={{
           marginTop: 4, padding: "4px 9px",
           background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
@@ -1171,7 +1216,7 @@ function OrderItemRow({ item, isDraft, color, onRemove, onUpdateRequest }) {
       )}
 
       {/* inline edit panel */}
-      {editing && isDraft && (
+      {hasSpecialRequests && editing && isDraft && (
         <div style={{
           marginTop: 6, padding: "10px 10px", background: "var(--bg-input, var(--bg-elevated))",
           border: "1px solid var(--accent-border)", borderRadius: 8,

@@ -109,6 +109,18 @@ body,html{font-family:var(--font);}
 .kp-empty-icon{font-size:56px;margin-bottom:16px;}
 `;
 
+/* ── Live clock ── */
+function KitchenClock() {
+  const [t, setT] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
+  return <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:700, color:"var(--accent)" }}>{t.toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit", second:"2-digit" })}</span>;
+}
+function getKitchenGreeting(name) {
+  const h = new Date().getHours();
+  const part = h < 12 ? "Good Morning" : h < 17 ? "Good Afternoon" : "Good Evening";
+  return `${part}, ${name || "Chef"}! 👨‍🍳`;
+}
+
 export default function KitchenPanel() {
   const [station, setStation]   = useState("food"); // "food" | "bar"
   const [orders, setOrders]     = useState([]);
@@ -236,11 +248,9 @@ export default function KitchenPanel() {
               ? <img src={user.restaurant_logo} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
               : (isBar ? "🍹" : "👨‍🍳")}
           </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: "var(--txt)" }}>
-              {user?.restaurant_name}
-            </div>
-            <div style={{ fontSize: 11, color: "var(--muted)" }}>{user?.name}</div>
+          <div className="kp-header-left-info">
+            <div className="kp-panel-title">{isBar ? "Bar Panel" : "Kitchen Panel"}</div>
+            <div className="kp-panel-sub">{user?.restaurant_name} · {user?.name}</div>
           </div>
         </div>
 
@@ -261,6 +271,12 @@ export default function KitchenPanel() {
         </div>
 
         <div className="kp-header-r">
+          <div style={{ display:"flex", alignItems:"center", gap:5, background:"var(--elevated)", border:"1px solid var(--border-md)", borderRadius:8, padding:"5px 10px", fontSize:11, color:"var(--txt2)" }}>
+            <span>📅</span>
+            <span>{new Date().toLocaleDateString("en-US", { month:"short", day:"numeric" })}</span>
+            <span>·</span>
+            <KitchenClock />
+          </div>
           <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 700 }}>🕐 {pending.length}</span>
           <span style={{ fontSize: 12, color: "var(--info)", fontWeight: 700 }}>🔥 {preparing.length}</span>
           <button className="btn btn-outline btn-sm" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
@@ -270,6 +286,14 @@ export default function KitchenPanel() {
           <button className="btn btn-ghost btn-sm" onClick={handleLogout}>🚪 Logout</button>
         </div>
       </header>
+
+      {/* Greeting banner */}
+      <div style={{ padding:"10px 16px 0" }}>
+        <div style={{ background:"var(--elevated)", border:"1px solid var(--border-md)", borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+          <div style={{ fontWeight:700, fontSize:14, color:"var(--txt)" }}>{getKitchenGreeting(user?.name)}</div>
+          <div style={{ fontSize:12, color:"var(--muted)" }}>{new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}</div>
+        </div>
+      </div>
 
       {/* ── Body ── */}
       <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
@@ -331,6 +355,13 @@ export default function KitchenPanel() {
             )}
           </>
         )}
+      {/* DineX branding footer */}
+      <div style={{ textAlign:"center", padding:"10px 0 12px",
+           fontSize:11, color:"rgba(148,163,184,0.7)", borderTop:"1px solid rgba(148,163,184,0.1)", marginTop:8 }}>
+        Developed &amp; Powered by 
+        <a href="https://www.saugatbohara.com.np/Dinex.html" target="_blank" rel="noopener noreferrer"
+           style={{ color:"#818cf8", textDecoration:"none", fontWeight:700 }}>DineX</a>
+      </div>
       </div>
     </div>
   );

@@ -8,33 +8,369 @@ import {
   PieChart, Pie, Cell, AreaChart, Area, LineChart, Line
 } from "recharts";
 
-const TABS = [
-  { id: "overview",    label: "Overview",         icon: "📊", section: "main" },
-  { id: "orders",      label: "Orders",            icon: "🧾", section: "main" },
-  { id: "kitchen",     label: "Kitchen Orders",    icon: "👨‍🍳", section: "main" },
-  { id: "tables",      label: "Tables",            icon: "🪑", section: "manage" },
-  { id: "menu",        label: "Menu",              icon: "🍔", section: "manage" },
-  { id: "inventory",   label: "Inventory",         icon: "📦", section: "manage" },
-  { id: "stocklog",    label: "Daily Stock Log",   icon: "📈", section: "manage" },
-  { id: "users",       label: "Staff",             icon: "👥", section: "manage" },
-  { id: "specials",    label: "Daily Specials",    icon: "⭐", section: "manage" },
-  { id: "credits",     label: "Credit Payments",   icon: "💳", section: "finance" },
-  { id: "income",      label: "Income & Expenses", icon: "💹", section: "finance" },
-  { id: "expenses",    label: "Expense Entry",     icon: "💸", section: "finance" },
-  { id: "waste",       label: "Waste Log",         icon: "🗑️", section: "finance" },
-  { id: "insights",    label: "Smart Insights",    icon: "🧠", section: "finance" },
-  { id: "attendance",  label: "Attendance",        icon: "📋", section: "hr" },
-  { id: "notifications", label: "Notifications",  icon: "🔔", section: "hr" },
+// All possible tabs with their required feature gate (null = always visible)
+const ALL_TABS = [
+  { id: "overview",       label: "Overview",          icon: "📊", section: "main",    feature: null },
+  { id: "orders",         label: "Orders",             icon: "🧾", section: "main",    feature: null },
+  { id: "kitchen",        label: "Kitchen Orders",     icon: "👨‍🍳", section: "main",    feature: null },
+  { id: "tables",         label: "Tables",             icon: "🪑", section: "manage",  feature: null },
+  { id: "menu",           label: "Menu",               icon: "🍔", section: "manage",  feature: null },
+  { id: "inventory",      label: "Inventory",          icon: "📦", section: "manage",  feature: "inventory_management" },
+  { id: "stocklog",       label: "Daily Stock Log",    icon: "📈", section: "manage",  feature: "daily_stock_log" },
+  { id: "users",          label: "Staff",              icon: "👥", section: "manage",  feature: null },
+  { id: "specials",       label: "Daily Specials",     icon: "⭐", section: "manage",  feature: "daily_specials" },
+  { id: "credits",        label: "Credit Payments",    icon: "💳", section: "finance", feature: null },
+  { id: "income",         label: "Income & Expenses",  icon: "💹", section: "finance", feature: "income_expenditure_pl" },
+  { id: "expenses",       label: "Expense Entry",      icon: "💸", section: "finance", feature: "expense_tracking" },
+  { id: "waste",          label: "Waste Log",          icon: "🗑️", section: "finance", feature: "waste_log_tracking" },
+  { id: "insights",       label: "Smart Insights",     icon: "🧠", section: "finance", feature: "insights_analytics" },
+  { id: "attendance",     label: "Attendance",         icon: "📋", section: "hr",      feature: "staff_attendance" },
+  { id: "notifications",  label: "Notifications",      icon: "🔔", section: "hr",      feature: null },
 ];
+
+/* ── DateTime hook ── */
+function useDatetime() {
+  const [now, setNow] = React.useState(new Date());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  return { timeStr, dateStr };
+}
+
+/* ── Greeting helper ── */
+function getGreeting(name) {
+  const h = new Date().getHours();
+  const part = h < 12 ? "Good Morning" : h < 17 ? "Good Afternoon" : "Good Evening";
+  return `${part}, ${name || "Admin"}! 👋`;
+}
+
+/* ── Sidebar CSS injected once ── */
+const SIDEBAR_STYLES = `
+:root {
+  --sidebar-expanded: 240px;
+  --sidebar-collapsed: 80px;
+  --sidebar-transition: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar {
+  width: var(--sidebar-expanded);
+  min-height: 100vh;
+  background: var(--gradient-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width var(--sidebar-transition);
+  will-change: width;
+}
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed);
+}
+.sidebar-brand {
+  padding: 18px 12px 14px;
+  border-bottom: 1px solid var(--border);
+  overflow: visible;
+  white-space: nowrap;
+  transition: padding var(--sidebar-transition);
+}
+.sidebar.collapsed .sidebar-brand {
+  padding: 18px 12px 14px;
+}
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  overflow: visible;
+}
+.brand-logo h2,
+.restaurant-name,
+.brand-role {
+  transition: opacity var(--sidebar-transition), max-width var(--sidebar-transition), transform var(--sidebar-transition);
+  opacity: 1;
+  max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sidebar.collapsed .brand-logo h2,
+.sidebar.collapsed .restaurant-name,
+.sidebar.collapsed .brand-role {
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-8px);
+}
+
+/* Nav items in collapsed state */
+.nav-section-label {
+  transition: opacity var(--sidebar-transition), height var(--sidebar-transition), margin var(--sidebar-transition);
+  overflow: hidden;
+}
+.sidebar.collapsed .nav-section-label {
+  opacity: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.nav-item:hover { background: var(--accent-glow); color: var(--text-primary); }
+.nav-item.active { background: var(--accent-bg); color: var(--accent-light); font-weight: 600; }
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 20%; bottom: 20%;
+  width: 3px;
+  background: var(--gradient-brand);
+  border-radius: 0 3px 3px 0;
+}
+.nav-item-label {
+  transition: opacity var(--sidebar-transition), max-width var(--sidebar-transition), transform var(--sidebar-transition);
+  opacity: 1;
+  max-width: 180px;
+  overflow: hidden;
+}
+.sidebar.collapsed .nav-item-label {
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-8px);
+}
+.nav-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+/* Center icons when collapsed */
+.sidebar.collapsed .nav-item {
+  padding: 10px 8px;
+  justify-content: center;
+}
+.sidebar.collapsed .nav-item .nav-icon {
+  width: 26px;
+  font-size: 18px;
+  margin: 0;
+}
+/* Tooltip for collapsed */
+.sidebar.collapsed .nav-item {
+  position: relative;
+}
+.sidebar.collapsed .nav-item::after {
+  content: attr(data-label);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s 0.1s;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.sidebar.collapsed .nav-item:hover::after { opacity: 1; }
+
+/* User info in footer */
+.user-info {
+  padding: 10px 11px;
+  margin-bottom: 4px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  white-space: nowrap;
+  transition: padding var(--sidebar-transition);
+}
+.user-name, .user-role {
+  transition: opacity var(--sidebar-transition), max-height var(--sidebar-transition);
+  overflow: hidden;
+}
+.sidebar.collapsed .user-info {
+  padding: 8px 4px;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+}
+.sidebar.collapsed .user-name,
+.sidebar.collapsed .user-role {
+  opacity: 0;
+  max-height: 0;
+}
+
+/* Collapse toggle button */
+.sidebar-collapse-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  pointer-events: all;
+}
+.sidebar-collapse-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent-light);
+  border-color: var(--accent-light);
+}
+/* Collapsed sidebar brand area */
+.sidebar.collapsed .sidebar-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 8px 12px !important;
+}
+/* Collapsed: hide the text block next to logo */
+.sidebar.collapsed .brand-name-block {
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Collapsed: make restaurant logo bigger and centered */
+.sidebar.collapsed .restaurant-logo-img {
+  width: 46px !important;
+  height: 46px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.25) !important;
+  display: block;
+}
+.sidebar.collapsed .restaurant-logo-placeholder {
+  width: 46px !important;
+  height: 46px !important;
+  border-radius: 12px !important;
+  font-size: 24px !important;
+}
+/* Collapsed: the flex row becomes a column, logo on top, button below */
+.sidebar.collapsed .sidebar-brand > div:first-child {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.sidebar.collapsed .sidebar-collapse-btn {
+  margin-left: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+}
+
+/* Nav badge */
+.nav-badge {
+  margin-left: auto;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  animation: badgePulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.sidebar.collapsed .nav-badge {
+  position: absolute;
+  top: 4px; right: 4px;
+  margin-left: 0;
+  padding: 1px 4px;
+  min-width: 14px;
+  font-size: 9px;
+}
+
+/* Greeting banner */
+.admin-greeting-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 26px 0;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.greeting-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+.greeting-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.datetime-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.datetime-time {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent-light);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+.datetime-sep {
+  color: var(--border-strong);
+  font-size: 16px;
+}
+`;
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState("overview");
   const [notifs, setNotifs] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const { user, logout, theme, toggleTheme } = useAuth();
+  const { timeStr, dateStr } = useDatetime();
+  const { user, logout, theme, toggleTheme, hasFeature, planLabel } = useAuth();
   const navigate = useNavigate();
+
+  // Filter tabs based on the plan's feature set
+  const TABS = useMemo(
+    () => ALL_TABS.filter(t => !t.feature || hasFeature(t.feature)),
+    [hasFeature]
+  );
 
   const loadNotifs = React.useCallback(async () => {
     try {
@@ -72,7 +408,17 @@ export default function AdminDashboard() {
     { id: "hr",      label: "HR" },
   ];
 
+  // Plan badge config
+  const planConfig = {
+    starter:  { label: "Starter",  color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
+    business: { label: "Business", color: "#6366f1", bg: "rgba(99,102,241,0.12)" },
+    pro:      { label: "Pro",      color: "#8b5cf6", bg: "rgba(139,92,246,0.12)" },
+  };
+  const planBadge = planConfig[user?.subscription_plan] || planConfig.starter;
+
   return (
+    <>
+    <style>{SIDEBAR_STYLES}</style>
     <div className="dashboard">
       {/* Logout Confirmation Modal */}
       {showLogoutModal && (
@@ -92,7 +438,7 @@ export default function AdminDashboard() {
         className={`sidebar-overlay${sidebarOpen ? " visible" : ""}`}
         onClick={() => setSidebarOpen(false)}
       />
-      <aside className={`sidebar${sidebarOpen ? " open" : ""}`}>
+      <aside className={`sidebar${sidebarOpen ? " open" : ""}${sidebarCollapsed ? " collapsed" : ""}`}>
         {/* Mobile close button inside sidebar */}
         <button
           className="sidebar-close-btn"
@@ -100,50 +446,94 @@ export default function AdminDashboard() {
           aria-label="Close menu"
         >✕</button>
         <div className="sidebar-brand">
-          <div className="brand-logo">
-            <img src="/dinex-favicon-1.png" alt="DineX" style={{ width: 44, height: 44, objectFit: "contain" }} />
-            <h2>DineX</h2>
+          <div style={{ display:"flex", alignItems:"center", width:"100%" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:9, flex:1, minWidth:0, overflow:"hidden" }}>
+              {user?.restaurant_logo
+                ? <img
+                    className="restaurant-logo-img"
+                    src={user.restaurant_logo} alt="logo"
+                    style={{ width:38, height:38, borderRadius:10, objectFit:"cover",
+                             border:"2px solid var(--border)", flexShrink:0,
+                             boxShadow:"0 2px 8px rgba(0,0,0,0.18)",
+                             transition:"all 0.28s cubic-bezier(0.4,0,0.2,1)" }} />
+                : <div
+                    className="restaurant-logo-placeholder"
+                    style={{ width:38, height:38, borderRadius:10, background:"var(--gradient-brand)",
+                             display:"flex", alignItems:"center", justifyContent:"center",
+                             fontSize:20, flexShrink:0,
+                             transition:"all 0.28s cubic-bezier(0.4,0,0.2,1)" }}>🍽</div>
+              }
+              <div className="brand-name-block" style={{ overflow:"hidden", transition:"all 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
+                <div className="restaurant-name" style={{ fontWeight:700, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{user?.restaurant_name}</div>
+                <div className="brand-role" style={{ fontSize:11 }}>Admin Panel</div>
+              </div>
+            </div>
+            <button
+              className="sidebar-collapse-btn"
+              onClick={() => setSidebarCollapsed(c => !c)}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              style={{ marginLeft: sidebarCollapsed ? 0 : "auto", flexShrink:0 }}
+            >
+              {sidebarCollapsed ? "›" : "‹"}
+            </button>
           </div>
-          {user?.restaurant_logo && (
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8, marginBottom:4 }}>
-              <img src={user.restaurant_logo} alt="Restaurant logo" style={{ width:36, height:36, borderRadius:10, objectFit:"cover", border:"2px solid var(--border)" }} />
-              <div style={{ fontSize:13, fontWeight:700, color:"var(--text-primary)" }}>{user?.restaurant_name}</div>
+          {/* Plan badge — hidden when collapsed */}
+          {!sidebarCollapsed && (
+            <div style={{
+              marginTop:8, display:"inline-flex", alignItems:"center", gap:5,
+              background: planBadge.bg, border:`1px solid ${planBadge.color}33`,
+              color: planBadge.color, fontSize:10, fontWeight:700,
+              padding:"3px 9px", borderRadius:12, letterSpacing:"0.3px"
+            }}>
+              ⭐ {planBadge.label} Plan
             </div>
           )}
-          {!user?.restaurant_logo && <div className="restaurant-name">{user?.restaurant_name}</div>}
-          <div className="brand-role">Admin Panel</div>
         </div>
         <nav>
-          {sections.map(sec => (
-            <div key={sec.id}>
-              <div className="nav-section-label">{sec.label}</div>
-              {TABS.filter(t => t.section === sec.id).map(t => (
-                <button
-                  key={t.id}
-                  className={`nav-item ${tab === t.id ? "active" : ""}`}
-                  onClick={() => { setTab(t.id); setSidebarOpen(false); }}
-                >
-                  <span className="nav-icon">{t.icon}</span>{t.label}
-                  {t.id === "notifications" && unreadCount > 0 && (
-                    <span className="nav-badge">{unreadCount}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          ))}
+          {sections.map(sec => {
+            const sectionTabs = TABS.filter(t => t.section === sec.id);
+            if (sectionTabs.length === 0) return null;
+            return (
+              <div key={sec.id}>
+                <div className="nav-section-label">{sec.label}</div>
+                {sectionTabs.map(t => (
+                  <button
+                    key={t.id}
+                    className={`nav-item ${tab === t.id ? "active" : ""}`}
+                    data-label={t.label}
+                    onClick={() => { setTab(t.id); setSidebarOpen(false); }}
+                  >
+                    <span className="nav-icon">{t.icon}</span>
+                    <span className="nav-item-label">{t.label}</span>
+                    {t.id === "notifications" && unreadCount > 0 && (
+                      <span className="nav-badge">{unreadCount}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-footer">
           <div className="user-info">
             <div className="user-name">{user?.name}</div>
             <div className="user-role">Admin · {user?.restaurant_name}</div>
           </div>
-          <button className="nav-item" onClick={toggleTheme}>
+          <button className="nav-item" data-label={theme === "dark" ? "Light Mode" : "Dark Mode"} onClick={toggleTheme}>
             <span className="nav-icon">{theme === "dark" ? "🌙" : "☀️"}</span>
-            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+            <span className="nav-item-label">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
           </button>
-          <button className="nav-item" onClick={handleLogout}>
-            <span className="nav-icon">🚪</span>Logout
+          <button className="nav-item" data-label="Logout" onClick={handleLogout}>
+            <span className="nav-icon">🚪</span>
+            <span className="nav-item-label">Logout</span>
           </button>
+          <div style={{ textAlign:"center", padding:"8px 6px 2px", fontSize:10,
+                        color:"var(--text-muted)", lineHeight:1.5, whiteSpace:"normal" }}>
+            <span className="nav-item-label">Developed &amp; Powered by </span>
+            <a href="https://www.saugatbohara.com.np/Dinex.html" target="_blank" rel="noopener noreferrer"
+               style={{ color:"var(--accent-light,#818cf8)", textDecoration:"none", fontWeight:700 }}
+               className="nav-item-label">DineX</a>
+          </div>
         </div>
       </aside>
 
@@ -154,7 +544,7 @@ export default function AdminDashboard() {
             ☰
           </button>
           <span className="mobile-topbar-title">
-            {TABS.find(t => t.id === tab)?.icon} {TABS.find(t => t.id === tab)?.label || "Dashboard"}
+            {ALL_TABS.find(t => t.id === tab)?.icon} {ALL_TABS.find(t => t.id === tab)?.label || "Dashboard"}
           </span>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             {unreadCount > 0 && (
@@ -164,29 +554,80 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+
+        {/* Greeting + DateTime bar */}
+        <div className="admin-greeting-bar">
+          <div>
+            <div className="greeting-text">{getGreeting(user?.name)}</div>
+            <div className="greeting-sub">Welcome back to your Admin Panel</div>
+          </div>
+          <div className="datetime-pill">
+            <span>📅</span>
+            <span>{dateStr}</span>
+            <span className="datetime-sep">·</span>
+            <span className="datetime-time">🕐 {timeStr}</span>
+          </div>
+        </div>
+
         {tab === "overview"       && <OverviewTab onNotifClick={() => setTab("notifications")} unreadCount={unreadCount} />}
         {tab === "orders"         && <OrdersTab />}
         {tab === "kitchen"        && <KitchenTab />}
         {tab === "tables"         && <TablesTab />}
         {tab === "menu"           && <MenuTab />}
-        {tab === "inventory"      && <InventoryTab />}
-        {tab === "stocklog"       && <DailyStockLogTab />}
+        {tab === "inventory"      && (hasFeature("inventory_management")    ? <InventoryTab />    : <FeatureLocked feature="Inventory Management"    requiredPlan="Business" />)}
+        {tab === "stocklog"       && (hasFeature("daily_stock_log")         ? <DailyStockLogTab /> : <FeatureLocked feature="Daily Stock Log"         requiredPlan="Business" />)}
         {tab === "users"          && <UsersTab />}
-        {tab === "specials"       && <DailySpecialsTab />}
+        {tab === "specials"       && (hasFeature("daily_specials")          ? <DailySpecialsTab /> : <FeatureLocked feature="Daily Specials"          requiredPlan="Business" />)}
         {tab === "credits"        && <CreditsTab />}
-        {tab === "income"         && <IncomeExpenditureTab onSwitchToExpenses={() => setTab("expenses")} />}
-        {tab === "expenses"       && <ExpensesTab />}
-        {tab === "waste"          && <WasteLogTab />}
-        {tab === "insights"       && <InsightsTab />}
-        {tab === "attendance"     && <AttendanceTab />}
+        {tab === "income"         && (hasFeature("income_expenditure_pl")   ? <IncomeExpenditureTab onSwitchToExpenses={() => setTab("expenses")} /> : <FeatureLocked feature="Income & Expenditure P&L" requiredPlan="Business" />)}
+        {tab === "expenses"       && (hasFeature("expense_tracking")        ? <ExpensesTab />     : <FeatureLocked feature="Expense Tracking"        requiredPlan="Business" />)}
+        {tab === "waste"          && (hasFeature("waste_log_tracking")      ? <WasteLogTab />     : <FeatureLocked feature="Waste Log Tracking"      requiredPlan="Pro" />)}
+        {tab === "insights"       && (hasFeature("insights_analytics")      ? <InsightsTab />     : <FeatureLocked feature="Smart Insights & Analytics" requiredPlan="Pro" />)}
+        {tab === "attendance"     && (hasFeature("staff_attendance")        ? <AttendanceTab />   : <FeatureLocked feature="Staff Attendance"        requiredPlan="Business" />)}
         {tab === "notifications"  && <NotificationsTab notifs={notifs} onMarkRead={markRead} onMarkAll={markAllRead} onRefresh={loadNotifs} />}
+      </div>
+    </div>
+    </>
+  );
+}
+
+/* ─── Feature Locked Screen ─────────────────────────────────────────────── */
+function FeatureLocked({ feature, requiredPlan = "Business" }) {
+  const planColors = { Business: "#6366f1", Pro: "#8b5cf6" };
+  const planIcons  = { Business: "⚡", Pro: "👑" };
+  const color = planColors[requiredPlan] || "#6366f1";
+  const icon  = planIcons[requiredPlan]  || "⚡";
+
+  return (
+    <div style={{
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      minHeight:420, padding:"40px 24px", textAlign:"center"
+    }}>
+      <div style={{
+        width:80, height:80, borderRadius:20, background:`${color}18`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        fontSize:36, marginBottom:24, border:`2px solid ${color}30`
+      }}>🔒</div>
+      <h2 style={{ margin:"0 0 10px", fontSize:22, fontWeight:800, color:"var(--text-primary)" }}>
+        {feature}
+      </h2>
+      <p style={{ margin:"0 0 28px", color:"var(--text-muted)", fontSize:14, maxWidth:380, lineHeight:1.6 }}>
+        This feature is not included in your current subscription plan.
+        Upgrade to the <strong style={{ color }}>{requiredPlan}</strong> plan to unlock it.
+      </p>
+      <div style={{
+        display:"inline-flex", alignItems:"center", gap:8,
+        background:`${color}15`, border:`1px solid ${color}40`,
+        color, padding:"10px 22px", borderRadius:30, fontSize:13, fontWeight:700
+      }}>
+        {icon} Requires {requiredPlan} Plan — Contact Super Admin to upgrade
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NOTIFICATIONS TAB (standalone panel — not credits)
+// NOTIFICATIONS TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function NotificationsTab({ notifs, onMarkRead, onMarkAll, onRefresh }) {
   const typeIcon = { credit_due: "💳", subscription_ending: "📅", subscription_expired: "🚫", system: "🔧", credit_overdue: "🔴", reservation_noshow: "🚫" };
@@ -1512,6 +1953,7 @@ function getAutoLabel(section, existingTablesInSection) {
 }
 
 function TablesTab() {
+  const { hasFeature } = useAuth();
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1563,8 +2005,10 @@ function TablesTab() {
   const handleWizardStep2 = (e) => {
     e.preventDefault();
     const count = parseInt(wizardCount);
+    const cap = parseInt(wizardCapacity);
     if (!count || count < 1 || count > 50) return;
-    const preview = buildPreview(wizardSection, count, wizardCapacity);
+    if (!cap || cap < 1) return;
+    const preview = buildPreview(wizardSection, count, cap);
     setWizardPreview(preview);
     setWizardStep(3);
   };
@@ -1580,13 +2024,15 @@ function TablesTab() {
           table_section: wizardSection,
         });
       }
+      await load();
       setWizardStep(1);
       setWizardSection("");
       setWizardCount("");
       setWizardCapacity(4);
       setWizardPreview([]);
-      await load();
-    } catch {}
+    } catch (err) {
+      alert(err?.response?.data?.error || err?.response?.data?.msg || "Failed to create tables. Please try again.");
+    }
     setSaving(false);
   };
 
@@ -1798,7 +2244,7 @@ function TablesTab() {
                         <div style={{ fontSize: 10, color: "var(--info, #38bdf8)", fontWeight: 700, marginTop: 2 }}>📍 {t.table_section}</div>
                       )}
                       <div className="tile-status" style={{ marginTop: 6 }}>{t.status}</div>
-                      {t.status === "reserved" && (
+                      {t.status === "reserved" && hasFeature("table_reservations") && (
                         <div style={{ fontSize: 10, marginTop: 4, color: "var(--accent)", fontWeight: 600 }}>
                           📋 {t.reserved_by_name}
                           {t.reserved_by_phone && <div>📞 {t.reserved_by_phone}</div>}
@@ -1866,10 +2312,10 @@ function TablesTab() {
                   <select value={editModal.status} onChange={e => setEditModal({ ...editModal, status: e.target.value })}>
                     <option value="available">Available</option>
                     <option value="occupied">Occupied</option>
-                    <option value="reserved">Reserved</option>
+                    {hasFeature("table_reservations") && <option value="reserved">Reserved</option>}
                   </select>
                 </div>
-                {editModal.status === "reserved" && (
+                {editModal.status === "reserved" && hasFeature("table_reservations") && (
                   <div className="form-grid form-grid-2">
                     <div className="form-group">
                       <label>Reserved By (Name) *</label>
@@ -2317,9 +2763,13 @@ function DailyStockLogTab() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
+  const [savedRows, setSavedRows] = useState({}); // tracks recently-saved rows for animation
   const [editValues, setEditValues] = useState({});
   const [activeView, setActiveView] = useState("entry"); // "entry" | "comparison"
   const [historyDates, setHistoryDates] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null); // { updated, items } | null
+  const [showSyncSuccess, setShowSyncSuccess] = useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -2370,8 +2820,31 @@ function DailyStockLogTab() {
         notes: vals.notes || null,
       });
       await load();
+      // Trigger save success animation
+      setSavedRows(s => ({ ...s, [item.id]: true }));
+      setTimeout(() => setSavedRows(s => { const n = { ...s }; delete n[item.id]; return n; }), 2000);
     } catch {}
     setSaving(s => ({ ...s, [item.id]: false }));
+  };
+
+  const handleSyncToInventory = async () => {
+    const hasClosing = logs.some(l => l.closing_stock !== null);
+    if (!hasClosing) {
+      alert("No closing stock entries found for this date. Please save closing stock values first.");
+      return;
+    }
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await API.post("/inventory/sync-from-closing", { date: selectedDate });
+      setSyncResult(res.data);
+      setShowSyncSuccess(true);
+      await load();
+      setTimeout(() => setShowSyncSuccess(false), 4000);
+    } catch (err) {
+      alert("Sync failed. Please try again.");
+    }
+    setSyncing(false);
   };
 
   const updateVal = (invId, field, value) => {
@@ -2401,8 +2874,53 @@ function DailyStockLogTab() {
             onChange={e => setSelectedDate(e.target.value)}
             style={{ borderRadius:8, border:"1px solid var(--border)", padding:"6px 10px", background:"var(--bg-surface)", color:"var(--text-primary)", fontSize:13 }}
           />
+          <button
+            className="btn btn-primary"
+            onClick={handleSyncToInventory}
+            disabled={syncing || logs.filter(l => l.closing_stock !== null).length === 0}
+            style={{
+              display:"flex", alignItems:"center", gap:7, fontWeight:700, fontSize:13,
+              background: syncing ? undefined : "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+              border:"none", borderRadius:9, padding:"8px 16px",
+              boxShadow: syncing ? "none" : "0 2px 8px rgba(99,102,241,0.35)",
+              transition:"all 0.2s",
+              opacity: (syncing || logs.filter(l => l.closing_stock !== null).length === 0) ? 0.6 : 1,
+            }}
+          >
+            {syncing ? (
+              <><span className="spinner-sm" style={{ borderTopColor:"#fff" }} /> Syncing…</>
+            ) : (
+              <><span style={{ fontSize:15 }}>🔄</span> Sync to Inventory</>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Sync success toast */}
+      {showSyncSuccess && syncResult && (
+        <div style={{
+          margin:"0 24px 12px",
+          padding:"12px 18px",
+          background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(16,185,129,0.08))",
+          border:"1px solid rgba(34,197,94,0.35)",
+          borderRadius:12,
+          display:"flex", alignItems:"center", gap:12,
+          animation:"slideDown 0.35s cubic-bezier(.34,1.56,.64,1)",
+        }}>
+          <span style={{ fontSize:22 }}>✅</span>
+          <div>
+            <div style={{ fontWeight:700, color:"var(--success)", fontSize:14 }}>
+              Inventory synced successfully!
+            </div>
+            <div style={{ fontSize:12, color:"var(--text-muted)", marginTop:2 }}>
+              {syncResult.updated} item{syncResult.updated !== 1 ? "s" : ""} updated with closing stock values from {selectedDate}.
+              {syncResult.items?.length > 0 && (
+                <span> ({syncResult.items.map(i => i.item_name).join(", ")})</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* View toggle */}
       <div style={{ display:"flex", gap:4, margin:"0 24px 16px", background:"var(--bg-surface)", borderRadius:10, padding:4, width:"fit-content", border:"1px solid var(--border)" }}>
@@ -2491,10 +3009,26 @@ function DailyStockLogTab() {
                         <td>
                           <button
                             className="btn btn-primary btn-sm"
-                            disabled={saving[item.id]}
+                            disabled={saving[item.id] || savedRows[item.id]}
                             onClick={() => handleSave(item)}
+                            style={{
+                              minWidth:68,
+                              transition:"all 0.25s",
+                              background: savedRows[item.id]
+                                ? "linear-gradient(135deg,#22c55e,#16a34a)"
+                                : undefined,
+                              transform: savedRows[item.id] ? "scale(1.05)" : "scale(1)",
+                              boxShadow: savedRows[item.id] ? "0 2px 8px rgba(34,197,94,0.4)" : undefined,
+                            }}
                           >
-                            {saving[item.id] ? <span className="spinner-sm" /> : "Save"}
+                            {saving[item.id]
+                              ? <><span className="spinner-sm" /> Saving…</>
+                              : savedRows[item.id]
+                                ? <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                                    <span style={{ fontSize:14 }}>✓</span> Saved!
+                                  </span>
+                                : "Save"
+                            }
                           </button>
                         </td>
                       </tr>

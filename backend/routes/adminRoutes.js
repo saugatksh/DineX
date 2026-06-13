@@ -3,9 +3,14 @@ const router = express.Router();
 const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const { authMiddleware, requireRole } = require("../middleware/authMiddleware");
+const { requireFeature, getLimitsForPlan } = require("../config/subscriptionPlans");
 
 const adminOnly = [authMiddleware, requireRole("admin")];
 
+// Feature gate shortcuts
+const requireExpenses     = requireFeature("expense_tracking");
+const requireIncomeP_L    = requireFeature("income_expenditure_pl");
+const requireAttendance   = requireFeature("staff_attendance");
 // ─── TAX SETTINGS ────────────────────────────────────────────────────────────
 router.get("/settings", ...adminOnly, async (req, res) => {
   const rid = req.user.restaurant_id;
@@ -152,7 +157,7 @@ router.get("/daily-report", ...adminOnly, async (req, res) => {
 });
 
 // ─── INCOME & EXPENDITURE REPORT ─────────────────────────────────────────────
-router.get("/income-expenditure", ...adminOnly, async (req, res) => {
+router.get("/income-expenditure", ...adminOnly, requireIncomeP_L, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { month, year } = req.query;
   try {
@@ -211,7 +216,7 @@ router.get("/income-expenditure", ...adminOnly, async (req, res) => {
 });
 
 // ─── EXPENSES ────────────────────────────────────────────────────────────────
-router.get("/expenses", ...adminOnly, async (req, res) => {
+router.get("/expenses", ...adminOnly, requireExpenses, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { month, year, type } = req.query;
   try {
@@ -230,7 +235,7 @@ router.get("/expenses", ...adminOnly, async (req, res) => {
   }
 });
 
-router.post("/expenses", ...adminOnly, async (req, res) => {
+router.post("/expenses", ...adminOnly, requireExpenses, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const { category, expense_type, description, amount, expense_date } = req.body;
@@ -245,7 +250,7 @@ router.post("/expenses", ...adminOnly, async (req, res) => {
   }
 });
 
-router.delete("/expenses/:id", ...adminOnly, async (req, res) => {
+router.delete("/expenses/:id", ...adminOnly, requireExpenses, async (req, res) => {
   try {
     await pool.query("DELETE FROM expenses WHERE id=$1 AND restaurant_id=$2",
       [req.params.id, req.user.restaurant_id]);
@@ -391,6 +396,31 @@ router.get("/users", ...adminOnly, async (req, res) => {
 router.post("/users", ...adminOnly, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
+    // ── Plan limit check ─────────────────────────────────────────────
+    if (req.user.role !== "superadmin") {
+      const restaurantResult = await pool.query(
+        "SELECT subscription_plan FROM restaurants WHERE id=$1", [rid]
+      );
+      const plan = restaurantResult.rows[0]?.subscription_plan || "starter";
+      const limits = getLimitsForPlan(plan);
+
+      if (limits.max_users !== null) {
+        const countResult = await pool.query(
+          "SELECT COUNT(*) FROM users WHERE restaurant_id=$1 AND role != 'admin'", [rid]
+        );
+        const currentCount = parseInt(countResult.rows[0].count, 10);
+        if (currentCount + 1 > limits.max_users) {
+          return res.status(403).json({
+            msg: `Staff user limit reached. Your ${plan} plan allows a maximum of ${limits.max_users} staff users. Please upgrade to add more.`,
+            limit_reached: true,
+            current_plan: plan,
+            max_users: limits.max_users,
+          });
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     const { name, username, email, password, role, contact_number } = req.body;
     const validRoles = ["waiter", "cashcounter", "kitchen"];
     if (!validRoles.includes(role)) return res.status(400).json({ msg: "Invalid role" });
@@ -446,7 +476,7 @@ router.delete("/users/:id", ...adminOnly, async (req, res) => {
 });
 
 // ─── ATTENDANCE ───────────────────────────────────────────────────────────────
-router.get("/attendance", ...adminOnly, async (req, res) => {
+router.get("/attendance", ...adminOnly, requireAttendance, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { date } = req.query;
   try {

@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 const { authMiddleware, requireRole } = require("../middleware/authMiddleware");
+const { getLimitsForPlan, requireFeature } = require("../config/subscriptionPlans");
 
 router.get("/", authMiddleware, async (req, res) => {
   const rid = req.user.restaurant_id;
@@ -17,6 +18,31 @@ router.get("/", authMiddleware, async (req, res) => {
 router.post("/", authMiddleware, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
+    // ── Plan limit check ─────────────────────────────────────────────
+    if (req.user.role !== "superadmin") {
+      const restaurantResult = await pool.query(
+        "SELECT subscription_plan FROM restaurants WHERE id=$1", [rid]
+      );
+      const plan = restaurantResult.rows[0]?.subscription_plan || "starter";
+      const limits = getLimitsForPlan(plan);
+
+      if (limits.max_tables !== null) {
+        const countResult = await pool.query(
+          "SELECT COUNT(*) FROM tables WHERE restaurant_id=$1", [rid]
+        );
+        const currentCount = parseInt(countResult.rows[0].count, 10);
+        if (currentCount + 1 > limits.max_tables) {
+          return res.status(403).json({
+            error: `Table limit reached. Your ${plan} plan allows a maximum of ${limits.max_tables} tables. Please upgrade to add more.`,
+            limit_reached: true,
+            current_plan: plan,
+            max_tables: limits.max_tables,
+          });
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     const { table_number, capacity, table_label, table_section } = req.body;
     const result = await pool.query(
       "INSERT INTO tables (table_number, capacity, restaurant_id, table_label, table_section) VALUES ($1,$2,$3,$4,$5) RETURNING *",
@@ -32,6 +58,23 @@ router.put("/:id", authMiddleware, async (req, res) => {
   const validStatuses = ["available", "occupied", "reserved"];
   if (status && !validStatuses.includes(status)) {
     return res.status(400).json({ error: "Invalid status" });
+  }
+  // Block 'reserved' status for plans without table_reservations
+  if (status === "reserved") {
+    const { planHasFeature } = require("../config/subscriptionPlans");
+    const rid = req.user?.restaurant_id;
+    if (rid) {
+      const planResult = await pool.query("SELECT subscription_plan FROM restaurants WHERE id=$1", [rid]);
+      const plan = planResult.rows[0]?.subscription_plan || "starter";
+      if (!planHasFeature(plan, "table_reservations")) {
+        return res.status(403).json({
+          error: "Table reservations are not available on the Starter plan. Please upgrade to Business or Pro.",
+          feature_locked: true,
+          required_feature: "table_reservations",
+          current_plan: plan,
+        });
+      }
+    }
   }
   try {
     const result = await pool.query(
@@ -57,8 +100,8 @@ router.put("/:id", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// RESERVE TABLE (admin sets reservation)
-router.post("/:id/reserve", authMiddleware, requireRole("admin", "cashcounter"), async (req, res) => {
+// RESERVE TABLE (admin sets reservation) — Business & Pro only
+router.post("/:id/reserve", authMiddleware, requireRole("admin", "cashcounter"), requireFeature("table_reservations"), async (req, res) => {
   const { reserved_by_name, reserved_by_phone, reservation_time } = req.body;
   if (!reserved_by_name || !reserved_by_phone) {
     return res.status(400).json({ error: "Name and phone are required for reservation" });

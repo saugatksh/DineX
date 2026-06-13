@@ -3,10 +3,15 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 const { authMiddleware, requireRole } = require("../middleware/authMiddleware");
+const { requireFeature } = require("../config/subscriptionPlans");
 const adminOnly = [authMiddleware, requireRole("admin")];
 
+const requireSpecials = requireFeature("daily_specials");
+const requireWaste = requireFeature("waste_log_tracking");
+const requireInsights = requireFeature("insights_analytics");
+
 // ── DAILY SPECIALS ────────────────────────────────────────────────────────────
-router.get("/specials", authMiddleware, async (req, res) => {
+router.get("/specials", authMiddleware, requireSpecials, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const result = await pool.query(
@@ -19,7 +24,7 @@ router.get("/specials", authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post("/specials", ...adminOnly, async (req, res) => {
+router.post("/specials", ...adminOnly, requireSpecials, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const { menu_id, discount_pct, label, active_date } = req.body;
@@ -32,7 +37,7 @@ router.post("/specials", ...adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete("/specials/:id", ...adminOnly, async (req, res) => {
+router.delete("/specials/:id", ...adminOnly, requireSpecials, async (req, res) => {
   try {
     await pool.query("DELETE FROM daily_specials WHERE id=$1 AND restaurant_id=$2",
       [req.params.id, req.user.restaurant_id]);
@@ -41,7 +46,7 @@ router.delete("/specials/:id", ...adminOnly, async (req, res) => {
 });
 
 // ── WASTE LOG ─────────────────────────────────────────────────────────────────
-router.get("/waste", ...adminOnly, async (req, res) => {
+router.get("/waste", ...adminOnly, requireWaste, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { month, year } = req.query;
   try {
@@ -57,7 +62,7 @@ router.get("/waste", ...adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post("/waste", ...adminOnly, async (req, res) => {
+router.post("/waste", ...adminOnly, requireWaste, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const { item_name, quantity, unit, reason, estimated_cost, logged_at } = req.body;
@@ -70,7 +75,7 @@ router.post("/waste", ...adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete("/waste/:id", ...adminOnly, async (req, res) => {
+router.delete("/waste/:id", ...adminOnly, requireWaste, async (req, res) => {
   try {
     await pool.query("DELETE FROM waste_log WHERE id=$1 AND restaurant_id=$2",
       [req.params.id, req.user.restaurant_id]);
@@ -79,7 +84,7 @@ router.delete("/waste/:id", ...adminOnly, async (req, res) => {
 });
 
 // ── SMART INSIGHTS ────────────────────────────────────────────────────────────
-router.get("/insights", ...adminOnly, async (req, res) => {
+router.get("/insights", ...adminOnly, requireInsights, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const [topItems, peakHours, slowItems, creditPending, wasteTotal] = await Promise.all([

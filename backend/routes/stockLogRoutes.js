@@ -2,9 +2,12 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../config/db");
 const { authMiddleware } = require("../middleware/authMiddleware");
+const { requireFeature } = require("../config/subscriptionPlans");
+
+const requireStockLog = requireFeature("daily_stock_log");
 
 // GET all stock logs for a date (default today)
-router.get("/", authMiddleware, async (req, res) => {
+router.get("/", authMiddleware, requireStockLog, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { date } = req.query;
   try {
@@ -23,7 +26,7 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 // GET log dates summary (for history view)
-router.get("/dates", authMiddleware, async (req, res) => {
+router.get("/dates", authMiddleware, requireStockLog, async (req, res) => {
   const rid = req.user.restaurant_id;
   try {
     const result = await pool.query(
@@ -43,7 +46,7 @@ router.get("/dates", authMiddleware, async (req, res) => {
 });
 
 // GET comparison: today vs yesterday for each item
-router.get("/comparison", authMiddleware, async (req, res) => {
+router.get("/comparison", authMiddleware, requireStockLog, async (req, res) => {
   const rid = req.user.restaurant_id;
   const { date } = req.query;
   const targetDate = date || new Date().toISOString().split("T")[0];
@@ -80,7 +83,7 @@ router.get("/comparison", authMiddleware, async (req, res) => {
 });
 
 // POST or UPSERT a stock log entry
-router.post("/", authMiddleware, async (req, res) => {
+router.post("/", authMiddleware, requireStockLog, async (req, res) => {
   const rid = req.user.restaurant_id;
   const uid = req.user.id;
   const { inventory_id, item_name, unit, log_date, opening_stock, closing_stock, notes } = req.body;
@@ -106,7 +109,7 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // PATCH a specific log entry (update opening or closing separately)
-router.patch("/:id", authMiddleware, async (req, res) => {
+router.patch("/:id", authMiddleware, requireStockLog, async (req, res) => {
   const { opening_stock, closing_stock, notes } = req.body;
   try {
     const result = await pool.query(
@@ -123,6 +126,29 @@ router.patch("/:id", authMiddleware, async (req, res) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: "Log not found" });
     res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /stock-log/sync-inventory — update inventory.quantity with closing_stock for a given date
+router.post("/sync-inventory", authMiddleware, requireStockLog, async (req, res) => {
+  const rid = req.user.restaurant_id;
+  const { log_date } = req.body;
+  const date = log_date || new Date().toISOString().split("T")[0];
+  try {
+    const result = await pool.query(
+      `UPDATE inventory i
+       SET quantity = sl.closing_stock,
+           updated_at = NOW()
+       FROM daily_stock_log sl
+       WHERE sl.inventory_id = i.id
+         AND sl.restaurant_id = $1
+         AND sl.log_date = $2
+         AND sl.closing_stock IS NOT NULL
+         AND i.restaurant_id = $1
+       RETURNING i.id, i.item_name, i.quantity`,
+      [rid, date]
+    );
+    res.json({ updated: result.rowCount, items: result.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { getFeaturesForPlan } = require("../config/subscriptionPlans");
 
 const JWT_SECRET = process.env.JWT_SECRET || "RESTAURANT_SECRET_KEY_V2";
 
@@ -23,7 +24,8 @@ const universalLogin = async (req, res) => {
     // Try regular user (username field)
     const userResult = await pool.query(
       `SELECT u.*, r.name as restaurant_name, r.subscription_end, r.is_active as restaurant_active,
-              r.logo as restaurant_logo, r.subscription_end as sub_end
+              r.logo as restaurant_logo, r.subscription_end as sub_end,
+              r.subscription_plan as subscription_plan
        FROM users u
        LEFT JOIN restaurants r ON u.restaurant_id = r.id
        WHERE u.username = $1`,
@@ -94,9 +96,12 @@ const universalLogin = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role, name: user.name, restaurant_id: user.restaurant_id, restaurant_name: user.restaurant_name },
+      { id: user.id, role: user.role, name: user.name, restaurant_id: user.restaurant_id, restaurant_name: user.restaurant_name, subscription_plan: user.subscription_plan || "starter" },
       JWT_SECRET, { expiresIn: "12h" }
     );
+
+    const plan = user.subscription_plan || "starter";
+    const features = getFeaturesForPlan(plan);
 
     res.json({
       token,
@@ -105,6 +110,8 @@ const universalLogin = async (req, res) => {
         role: user.role, restaurant_id: user.restaurant_id,
         restaurant_name: user.restaurant_name,
         restaurant_logo: user.restaurant_logo || null,
+        subscription_plan: plan,
+        features,
       },
     });
   } catch (err) {
