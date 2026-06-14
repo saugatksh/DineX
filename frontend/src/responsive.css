@@ -199,10 +199,11 @@ img, video, svg { max-width: 100%; height: auto; }
 .main-content {
   flex: 1;
   min-width: 0;
-  height: 100vh;
-  overflow-y: auto;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-y: visible;
+  height: auto;
 }
 
 /* ── Sidebar close button (hidden on desktop) ── */
@@ -270,9 +271,6 @@ img, video, svg { max-width: 100%; height: auto; }
   padding: 10px 14px;
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
   gap: 10px;
   min-height: var(--topbar-h);
   flex-shrink: 0;

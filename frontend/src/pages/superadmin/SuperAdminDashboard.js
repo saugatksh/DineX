@@ -69,8 +69,8 @@ const SA_STYLES = `
   .sa-hero {
     position:relative; overflow:hidden;
     background:linear-gradient(135deg,#1a1040 0%,#1e1560 40%,#161230 100%);
-    border-radius:16px; padding:20px 28px;
-    margin:20px 24px 20px; border:1px solid rgba(99,102,241,0.25);
+    border-radius:16px; padding:22px 28px;
+    margin:0 24px 20px; border:1px solid rgba(99,102,241,0.25);
     box-shadow:0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
     animation: sa-fade-up 0.55s cubic-bezier(0.34,1.3,0.64,1) both;
   }
@@ -100,57 +100,60 @@ const SA_STYLES = `
 
   .sa-greeting-row {
     display:flex; align-items:center; justify-content:space-between;
-    gap:20px; position:relative; z-index:1;
-    flex-wrap:nowrap;
+    gap:16px; position:relative; z-index:1;
   }
-  .sa-greeting-left {
-    display:flex; flex-direction:column; gap:7px;
-    flex:1; min-width:0; overflow:hidden;
-  }
-  .sa-greeting-tag {
-    display:inline-flex; align-items:center; gap:6px;
-    background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.35);
-    color:#a5b4fc; font-size:11px; font-weight:700; letter-spacing:0.8px;
-    text-transform:uppercase; padding:4px 12px; border-radius:20px;
-    animation:sa-slide-right 0.5s 0.1s both;
-    width:fit-content; flex-shrink:0;
-  }
-  [data-theme="light"] .sa-greeting-tag { background:rgba(99,102,241,0.12); color:#6366f1; border-color:rgba(99,102,241,0.3); }
-
   .sa-greeting-name {
-    font-size:clamp(20px,2.4vw,28px); font-weight:800; letter-spacing:-0.5px;
-    background:linear-gradient(135deg,#e0e7ff 0%,#a5b4fc 50%,#c4b5fd 100%);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-    animation:sa-fade-up 0.5s 0.15s both;
-    line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-size:18px; font-weight:700; letter-spacing:-0.2px;
+    color:#e0e7ff; animation:sa-fade-up 0.5s 0.1s both;
+    line-height:1.3; flex:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  [data-theme="light"] .sa-greeting-name {
-    background:linear-gradient(135deg,#4338ca 0%,#6366f1 50%,#7c3aed 100%);
-    -webkit-background-clip:text; background-clip:text;
-  }
-  .sa-greeting-sub {
-    font-size:13px; color:rgba(165,180,252,0.7); font-weight:400;
-    animation:sa-fade-up 0.5s 0.25s both;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  [data-theme="light"] .sa-greeting-sub { color:#6b7280; }
-
-  .sa-datetime-block {
-    display:flex; flex-direction:column; align-items:flex-end; gap:3px;
-    animation:sa-fade-up 0.5s 0.2s both; flex-shrink:0;
-  }
+  [data-theme="light"] .sa-greeting-name { color:#1e1b4b; }
   .sa-clock {
     font-family:'JetBrains Mono',monospace;
-    font-size:clamp(20px,2.2vw,28px); font-weight:600; letter-spacing:-0.5px;
-    background:linear-gradient(135deg,#e0e7ff,#a5b4fc);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-    line-height:1; white-space:nowrap;
+    font-size:16px; font-weight:600;
+    color:rgba(165,180,252,0.9);
+    animation:sa-fade-up 0.5s 0.15s both;
+    white-space:nowrap; flex-shrink:0;
   }
-  [data-theme="light"] .sa-clock { background:linear-gradient(135deg,#4338ca,#6366f1); -webkit-background-clip:text; background-clip:text; }
-  .sa-date-str {
-    font-size:11px; color:rgba(165,180,252,0.65); font-weight:500; text-align:right; white-space:nowrap;
+  [data-theme="light"] .sa-clock { color:#6366f1; }
+
+  /* xs — phones portrait (≤480px): sidebar hidden, full width */
+  @media (max-width:480px) {
+    .sa-hero { padding:14px 16px; margin:0 10px 14px; border-radius:12px; }
+    .sa-greeting-row { flex-direction:column; align-items:flex-start; gap:4px; }
+    .sa-greeting-name { font-size:15px; white-space:normal; }
+    .sa-clock { font-size:13px; }
   }
-  [data-theme="light"] .sa-date-str { color:#9ca3af; }
+
+  /* sm — phones landscape / small tablets (481–767px) */
+  @media (min-width:481px) and (max-width:767px) {
+    .sa-hero { padding:16px 20px; margin:0 14px 16px; border-radius:13px; }
+    .sa-greeting-name { font-size:16px; }
+    .sa-clock { font-size:14px; }
+  }
+
+  /* md — tablets (768–1023px): sidebar visible, less room */
+  @media (min-width:768px) and (max-width:1023px) {
+    .sa-hero { padding:18px 22px; margin:0 18px 18px; }
+    .sa-greeting-name { font-size:17px; }
+    .sa-clock { font-size:15px; }
+  }
+
+  /* lg — desktop (1024–1439px): default sizing is good */
+  @media (min-width:1024px) and (max-width:1439px) {
+    .sa-hero { padding:22px 28px; margin:0 24px 20px; }
+    .sa-greeting-name { font-size:20px; }
+    .sa-clock { font-size:17px; }
+  }
+
+  /* xl — large monitors (1440px+) */
+  @media (min-width:1440px) {
+    .sa-hero { padding:26px 36px; margin:0 28px 24px; }
+    .sa-greeting-name { font-size:24px; }
+    .sa-clock { font-size:20px; }
+  }
+
 
   /* ── Quick stat pills in hero ── */
   .sa-hero-pills {
@@ -502,17 +505,14 @@ function SAOverviewTab({ user }) {
   return (
     <>
       {/* ── Greeting bar ── */}
-      <div className="sa-hero">
-        <div className="sa-hero-orb sa-hero-orb1" />
-        <div className="sa-hero-orb sa-hero-orb2" />
-        <div className="sa-hero-grid" />
-        <div className="sa-greeting-row">
-          <div className="sa-greeting-left">
+      <div style={{ paddingTop:20 }}>
+        <div className="sa-hero">
+          <div className="sa-hero-orb sa-hero-orb1" />
+          <div className="sa-hero-orb sa-hero-orb2" />
+          <div className="sa-hero-grid" />
+          <div className="sa-greeting-row">
             <div className="sa-greeting-name">{getGreeting(user?.name)}</div>
-          </div>
-          <div className="sa-datetime-block">
             <div className="sa-clock">{timeStr}</div>
-            <div className="sa-date-str">{dateStr}</div>
           </div>
         </div>
       </div>
